@@ -115,7 +115,7 @@ def _centered_lines(d, lines, font, box, y=None):
         y += lh
 
 
-def _draw_qr(img, d, url):
+def _draw_qr(d, url):
     qr = segno.make(url, error="m", micro=False)
     quiet = 2
     n = qr.symbol_size(border=0)[0]
@@ -195,5 +195,5 @@ def render_badge(name: str, tagline: str, first_burn: int | None, qr_url: str | 
                font=_font(TEXT_FONT, 12), fill=0, anchor="ms")
 
     if qr_url:
-        _draw_qr(img, d, qr_url)
+        _draw_qr(d, qr_url)
     return img.convert("1", dither=Image.Dither.NONE)

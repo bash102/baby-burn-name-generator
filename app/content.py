@@ -294,7 +294,7 @@ def main(argv: list[str]) -> int:
     try:
         print(_summary(load_content(Path(argv[1]))))
     except ContentError as e:
-        print(f"{e}", file=sys.stderr)
+        print(e, file=sys.stderr)
         return 1
     return 0
 
