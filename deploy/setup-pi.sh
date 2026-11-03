@@ -13,7 +13,7 @@ HOST=babyburn
 echo "== apt packages"
 sudo apt-get update
 # mkcert is in Debian bookworm+ (Raspberry Pi OS); libnss3-tools lets it manage the local CA
-sudo apt-get install -y python3-venv libusb-1.0-0 avahi-daemon git curl mkcert libnss3-tools
+sudo apt-get install -y python3-venv libusb-1.0-0 avahi-daemon git curl mkcert libnss3-tools usbutils
 
 echo "== hostname"
 [ "$(hostname)" = "$HOST" ] || sudo hostnamectl set-hostname "$HOST"
@@ -40,12 +40,19 @@ fi
 cp "$(mkcert -CAROOT)/rootCA.pem" "$REPO/certs/rootCA.pem"  # install this on the iPad
 
 echo "== .env"
-[ -f "$REPO/.env" ] || { cp "$REPO/.env.example" "$REPO/.env"; echo "Created .env from .env.example: edit it (keys, ADMIN_PIN, PRINTER=usb://0x04f9:0x209b)."; }
+ENV_NEW=0
+if [ ! -f "$REPO/.env" ]; then cp "$REPO/.env.example" "$REPO/.env"; ENV_NEW=1; fi
+chmod 600 "$REPO/.env"  # holds API keys and ADMIN_PIN
 
 echo "== systemd unit"
 sudo install -m 644 "$REPO/deploy/babyburn.service" /etc/systemd/system/babyburn.service
 sudo systemctl daemon-reload
 sudo systemctl enable babyburn.service
-sudo systemctl restart babyburn.service
+if [ "$ENV_NEW" -eq 1 ]; then
+  echo "NOTE: created .env from .env.example; service enabled but NOT started."
+  echo "Edit $REPO/.env (provider keys, ADMIN_PIN, PRINTER=usb://0x04f9:0x209b), then: sudo systemctl start babyburn"
+else
+  sudo systemctl restart babyburn.service
+fi
 
 echo "Done. iPad root CA: $REPO/certs/rootCA.pem   URL: https://$HOST.local"

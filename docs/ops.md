@@ -8,7 +8,7 @@ R2 holds the "dusty baby" photos so guests can scan a QR and download them. Free
 2. Open the verification email from Cloudflare and click the link. Log back in if asked.
 3. In the left sidebar choose **Storage & databases -> R2 object storage** (labelled "R2" in older dashboards).
 4. Click **Purchase R2 Plan** / **Add R2 subscription**, add a payment method (a card is required even for the free tier), and confirm. You are not charged under the free limits.
-5. On your Mac, from the repo root, run `bash deploy/setup-r2.sh`. It needs Node (`npx`) and `uv`.
+5. On your Mac, from the repo root, run `bash deploy/setup-r2.sh`. It needs Node (`npx`) and `uv` (`brew install node uv`).
    - A browser opens for `wrangler login`; click **Allow**.
    - It creates the `baby-burn-photos` bucket, enables the public r2.dev URL (no directory listing), adds the single lifecycle rule (delete `tmp/` after 14 days; nothing on `p/` or `album/`), and prints the URL and your account ID.
 6. Create the API token (the one thing wrangler cannot do): dashboard -> **R2 object storage** -> **API** -> **Manage API tokens** -> **Create API token**.
@@ -16,7 +16,9 @@ R2 holds the "dusty baby" photos so guests can scan a QR and download them. Free
    - Specify bucket: only `baby-burn-photos`.
    - Click **Create API Token** and copy the **Access Key ID** and **Secret Access Key** (shown once).
 7. Paste both into the script prompts. It writes `PHOTO_BUCKET`, `PHOTO_BASE_URL`, `S3_ENDPOINT_URL`, `S3_REGION=auto`, the keys and a generated `ALBUM_SECRET` into `.env`, then runs `tools/cloud_check.py`.
-8. Copy those lines into the Pi's `.env` (or re-run the script on the Pi checkout).
+8. Put the R2 values on the Pi by copying the whole `.env` (it then also needs your provider key and `ADMIN_PIN`, set in section 2):
+   `scp .env pi@babyburn.local:~/baby-burn-name-generator/.env` then `ssh pi@babyburn.local chmod 600 baby-burn-name-generator/.env`.
+   Run this after `setup-pi.sh` has cloned/created the checkout; the Pi needs no other change.
 
 Re-running `setup-r2.sh` is safe; it keeps an existing `ALBUM_SECRET`.
 
@@ -28,7 +30,7 @@ Flash Raspberry Pi OS (bookworm), clone the repo to `/home/pi/baby-burn-name-gen
 cd ~/baby-burn-name-generator && bash deploy/setup-pi.sh
 ```
 
-It installs packages, sets hostname `babyburn`, installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed), adds the QL-800 udev rule (`lsusb` should show `04f9:209b`), generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad), and enables `babyburn.service` (`uv run --python 3.11 python -m app.web` on :443, `Restart=always`). Edit `.env` afterwards (provider key, `ADMIN_PIN`, `PRINTER=usb://0x04f9:0x209b`) and `sudo systemctl restart babyburn`.
+It installs packages, sets hostname `babyburn`, installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed), adds the QL-800 udev rule (`lsusb` should show `04f9:209b`), generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad), and enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start). The first run creates `.env` (mode 600) and does not start the service. Edit `.env`: `TRANSFORM_PROVIDER` (`openai` or `gemini`), the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`, `ADMIN_PIN`, `PRINTER=usb://0x04f9:0x209b`, then `sudo systemctl start babyburn` (use `restart` after later edits). Re-runs restart the service automatically.
 Logs: `journalctl -u babyburn -f`.
 
 ## 3. Networking
@@ -49,13 +51,13 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 
 ## 6. Go-live checklist
 
-- [ ] `python -m app.content content/` shows the approved counts you expect (names well above `LOW_NAMES_WARNING`).
-- [ ] Provider key set, `TRANSFORM_PROVIDER` is not `fake`.
+- [ ] `uv run --env-file .env python -m app.content content/` shows the approved counts you expect (names well above `LOW_NAMES_WARNING`).
+- [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `.env`.
 - [ ] Test print from the app; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
 - [ ] Bucket lifecycle rule on `tmp/` is 14 days (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
 - [ ] Album page is empty (reset it if you tested).
-- [ ] Cloud check from a phone on cellular: `python tools/cloud_check.py`, open the printed URL on the phone (page loads), then open the bucket root URL (no listing).
+- [ ] Cloud check from a phone on cellular: `uv run --env-file .env python tools/cloud_check.py`, open the printed URL on the phone (page loads), then open the bucket root URL (no listing).
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
 
 ## 7. After the party

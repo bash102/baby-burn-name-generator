@@ -53,6 +53,7 @@ read -r -s -p "Secret Access Key (hidden): " SECRET; echo
 [ -n "$KEY_ID" ] && [ -n "$SECRET" ] || { echo "Both key values are required." >&2; exit 1; }
 
 [ -f .env ] || cp .env.example .env
+chmod 600 .env  # holds secrets
 # Keep an existing ALBUM_SECRET so already-shared album links keep working on re-run.
 ALBUM_SECRET="$(sed -n 's/^ALBUM_SECRET=//p' .env | head -n1)"
 if [ -z "$ALBUM_SECRET" ] || [ "$ALBUM_SECRET" = change-me ]; then
@@ -75,5 +76,4 @@ set_env ALBUM_SECRET "$ALBUM_SECRET"
 echo "Wrote R2 settings to .env"
 
 echo "== cloud check"
-set -a; . ./.env; set +a
-uv run --python 3.11 python tools/cloud_check.py
+uv run --python 3.11 --env-file .env python tools/cloud_check.py
