@@ -139,6 +139,13 @@ def test_banned_word_in_approved_rejected(sample_content_dir):
     load_content(sample_content_dir)
 
 
+def test_owner_unblocked_words_load(sample_content_dir):
+    names = _read(sample_content_dir, "names")
+    names += [_name("e1", "Election Eddie"), _name("m1", "Molly Mapmaker")]
+    _write(sample_content_dir, "names", names)
+    load_content(sample_content_dir)
+
+
 def test_banned_matches_whole_words_only(sample_content_dir):
     names = _read(sample_content_dir, "names")
     names.append(_name("ok", "Methodical Mo"))

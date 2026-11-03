@@ -1,6 +1,6 @@
 # Burning Man / Regional Burn Lore: Raw Material for the Playa Name Kiosk
 
-Raw facts and bits, not finished jokes. Content rules applied: no drug references, nothing political, sexual content kept PG-13 and marked **[PG-13]**, no personal or tragic material (deaths are left out on purpose).
+Raw facts and bits, not finished jokes. Content rules applied: no drug content, non-partisan politics only (gerrymandering and election-process jokes are allowed per the 2026-11-03 owner decision), sexual content kept PG-13 and marked **[PG-13]**, no personal or tragic material (deaths are left out on purpose).
 
 Confidence tags: **[official]** means a burningman.org or Journal source. **[press]** means news coverage. **[anecdotal]** means a forum post, blog, or listicle.
 

@@ -8,6 +8,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 BUCKET=baby-burn-photos
 RULE=expire-tmp
+# Single source: RETENTION_DAYS in app/photos.py.
+RETENTION_DAYS="$(sed -n 's/^RETENTION_DAYS = \([0-9][0-9]*\).*/\1/p' app/photos.py)"
+[ -n "$RETENTION_DAYS" ] || { echo "Could not read RETENTION_DAYS from app/photos.py" >&2; exit 1; }
 W="npx --yes wrangler"
 
 echo "== 1/5 wrangler login (opens your browser; skipped if already logged in)"
@@ -26,11 +29,16 @@ DEV_URL="$($W r2 bucket dev-url get "$BUCKET" | grep -Eo 'https://pub-[A-Za-z0-9
 [ -n "$DEV_URL" ] || read -r -p "Could not detect the public URL. Paste it (https://pub-....r2.dev): " DEV_URL
 DEV_URL="${DEV_URL%/}"
 
-echo "== 4/5 lifecycle: delete tmp/ after 14 days (only rule; nothing on p/ or album/)"
-if $W r2 bucket lifecycle list "$BUCKET" | grep -q "$RULE"; then
-  echo "rule $RULE exists"
+echo "== 4/5 lifecycle: delete tmp/ after $RETENTION_DAYS days (only rule; nothing on p/ or album/)"
+RULES="$($W r2 bucket lifecycle list "$BUCKET")"
+if echo "$RULES" | grep -q "$RULE" && echo "$RULES" | grep -Eq "(^|[^0-9])$RETENTION_DAYS days?([^0-9]|$)"; then
+  echo "rule $RULE exists with $RETENTION_DAYS days"
 else
-  $W r2 bucket lifecycle add "$BUCKET" "$RULE" tmp/ --expire-days 14 -y
+  if echo "$RULES" | grep -q "$RULE"; then
+    echo "rule $RULE has different days; replacing it"
+    $W r2 bucket lifecycle remove "$BUCKET" --name "$RULE"
+  fi
+  $W r2 bucket lifecycle add "$BUCKET" "$RULE" tmp/ --expire-days "$RETENTION_DAYS" -y
 fi
 
 ACCOUNT_ID="$($W whoami --json 2>/dev/null | python3 -c 'import json,sys; a=json.load(sys.stdin).get("accounts") or []; print(a[0]["id"] if len(a)==1 else "")' 2>/dev/null || true)"

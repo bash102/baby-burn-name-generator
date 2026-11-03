@@ -20,7 +20,7 @@ from app.badge import render_badge
 from app.config import ROOT, Config
 from app.content import Content, ContentError, load_content
 from app.names import NameStore
-from app.photos import AlbumIndex, CloudPhotos, MemoryS3, PhotoStore, make_s3_client
+from app.photos import RETENTION_DAYS, AlbumIndex, CloudPhotos, MemoryS3, PhotoStore, make_s3_client
 from app.printer import make_printer
 from app.sessions import Session, SessionStore
 from app.transform import Provider, get_provider
@@ -134,7 +134,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         c = st.content
         fb, pool = _served(c)
         qs = ([fb] if fb else []) + st.rng.sample(pool, min(cfg.quiz_random_count, len(pool)))
-        return jsonify(questions=[{
+        return jsonify(retention_days=RETENTION_DAYS, questions=[{
             "id": q.id, "type": q.type, "prompt": q.prompt, "quip": q.quip,
             "options": [{"id": o.id, "text": o.text, "correct": o.correct, "first_burn": o.first_burn}
                         for o in q.options],
@@ -278,7 +278,7 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,
-            "printed": printed, "photo_url": photo_url}
+            "printed": printed, "photo_url": photo_url, "retention_days": RETENTION_DAYS}
 
 
 def _expire_loop(sessions: SessionStore) -> None:

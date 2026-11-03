@@ -16,7 +16,7 @@
 - Guest flow under 30 s; guest input is tap-only (no keyboard).
 - A name is given out at most once, ever; enforced by SQLite `PRIMARY KEY`, survives reboot.
 - Kiosk serves only `status: approved` entries. Statuses: `draft | approved | rejected`. `needs_owner: true` marks sex/body humor.
-- No drugs, no politics, nothing deeply personal, no real people's names in any content (private included).
+- No drug content, non-partisan politics only (gerrymandering and election-process jokes are in; no real politicians, named parties, or culture-war topics; owner decision 2026-11-03), nothing deeply personal, no real people's names in any content (private included).
 - Public repo `baby-burn-name-generator` contains **no** real content, guest names, planning-sheet data, photos, or keys. `content/`, `data/`, `.env`, `certs/` are gitignored.
 - App reads `CONTENT_DIR` if it exists, else `content.sample/`. Admin writes only to `CONTENT_DIR`.
 - Label: DK-1234 die-cut, brother_ql identifier `60x86`, printable 672 × 954 dots. Badge rendered landscape 954 × 672, mode `"1"`, sent rotated 90°.
@@ -259,7 +259,7 @@ with self._lock, self._db:                        # one transaction
 - [ ] **Step 2:** Draft **≥ 360 names**, all `status: draft`. Size each tag's share by how many quiz options/costume looks point to it (popular tags like `gnome`, `dust`, `sparkle`, `fur` get ≥ 35 each); every name ≥1 tag. Mix classic playa-name patterns with miniature/"Lil'"/"Baby" twists. Flag sex/body humor `needs_owner: true`.
 - [ ] **Step 3:** Draft **≥ 45 questions** (≥ 35 `single`, ≥ 8 `multi`), including every owner seed question in `SEEDS.md` verbatim. Each option ≤ 45 chars, ≤ 4 options, a `quip` ≤ 60 chars, tags on options where natural.
 - [ ] **Step 4:** Draft **≥ 30 taglines** ≤ 32 chars.
-- [ ] **Step 5:** `python -m app.content content/` passes with zero errors (after T1 merges; until then, hand-check against the schema). No real people's names, no drugs, no politics. Commit and push to the private repo only.
+- [ ] **Step 5:** `python -m app.content content/` passes with zero errors (after T1 merges; until then, hand-check against the schema). No real people's names, no drug content, non-partisan politics only (owner decision 2026-11-03). Commit and push to the private repo only.
 
 ---
 

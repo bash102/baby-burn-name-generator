@@ -20,12 +20,12 @@ QUESTION_TYPES = frozenset({"single", "multi"})
 # Max characters per field so badge and kiosk text always fit.
 MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 45, 60
 
-# Safety net only (drug and political terms, whole words, case-insensitive). The owner's review is the real gate.
+# Safety net only: drug terms, real politicians, party names. The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
-    "cocaine", "heroin", "meth", "methamphetamine", "lsd", "mdma", "ecstasy", "molly", "ketamine",
-    "weed", "marijuana", "cannabis", "shrooms", "psilocybin", "opium", "fentanyl", "dmt", "ayahuasca",
+    "cocaine", "heroin", "meth", "methamphetamine", "lsd", "mdma", "ketamine",
+    "marijuana", "cannabis", "shrooms", "psilocybin", "opium", "fentanyl", "dmt", "ayahuasca",
     "trump", "biden", "obama", "reagan", "putin", "republican", "republicans", "democrat", "democrats",
-    "gop", "maga", "liberal", "liberals", "conservative", "conservatives", "election",
+    "gop", "maga",
 })
 
 _LOCK = threading.Lock()  # serializes read-modify-write in set_status/append_entry (web threads)

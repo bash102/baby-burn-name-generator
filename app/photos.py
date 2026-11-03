@@ -13,6 +13,9 @@ from urllib.parse import urljoin
 
 log = logging.getLogger(__name__)
 
+RETENTION_DAYS = 14  # single source: unshared photos expire this long after upload (also the R2 lifecycle rule)
+EVENT_NAME = "Baby Burn 3"
+
 IMAGES = ("original", "dusty")
 ALBUM_CHAIN = "album"  # CloudPhotos chain key for album-page writes; tokens are 22 chars, never this
 HTML = "text/html; charset=utf-8"
@@ -134,8 +137,9 @@ const when = EXP.toLocaleDateString(undefined, {weekday: "short", month: "short"
 function tick() {
   const ms = EXP - Date.now(), el = document.getElementById("status");
   el.textContent = ms >= 36e5
-    ? "This photo will be deleted on " + when + " (in " + plural(Math.floor(ms / 864e5), "day") + ", "
-      + plural(Math.floor(ms % 864e5 / 36e5), "hour") + "). Download it before then."
+    ? "This photo will be deleted around " + when + " (in about "
+      + (ms >= 1728e5 ? plural(Math.floor(ms / 864e5), "day") : plural(Math.floor(ms / 36e5), "hour"))
+      + "). Download it before then."
     : "This photo is about to be deleted. Download it now if you want it.";
 }
 tick(); setInterval(tick, 60000);
@@ -160,12 +164,13 @@ def _countdown(exp: datetime, now: datetime) -> str:
     left = exp - now
     if left < timedelta(hours=1):
         return "This photo is about to be deleted. Download it now if you want it."
-    return (f"This photo will be deleted on {_short_date(exp)} (in {_plural(left.days, 'day')}, "
-            f"{_plural(left.seconds // 3600, 'hour')}). Download it before then.")
+    hours = int(left.total_seconds() // 3600)  # floor, same as the page script
+    span = _plural(hours // 24, "day") if hours >= 48 else _plural(hours, "hour")
+    return f"This photo will be deleted around {_short_date(exp)} (in about {span}). Download it before then."
 
 
 def render_photo_page(token: str, *, state: Literal["temp", "album", "deleted"], has_dusty: bool,
-                      uploaded_at: datetime, retention_days: int = 14, album_url: str,
+                      uploaded_at: datetime, retention_days: int = RETENTION_DAYS, album_url: str,
                       now: datetime | None = None) -> str:
     """Self-contained mobile page at p/<token>: deletion status first, then the images."""
     album_link = f"<p><a href='{html.escape(album_url)}'>See the Baby Burn album</a></p>"
@@ -207,7 +212,8 @@ def render_album_page(entries: list[tuple[str, str]], base_url: str) -> str:
     grid = "".join(figs) or "<p class=note>No photos yet. Be the first!</p>"
     style = ("<style>.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}"
              "figure{margin:0}figcaption{font-weight:700}</style>")
-    return _doc("Baby Burn 3 album", f"{style}<h1>Baby Burn 3 album</h1><div class=grid>{grid}</div>")
+    title = f"{EVENT_NAME} album"
+    return _doc(title, f"{style}<h1>{title}</h1><div class=grid>{grid}</div>")
 
 
 # ---------- cloud ----------
@@ -263,12 +269,12 @@ def put_album_page(client, bucket: str, base_url: str, secret: str, entries: lis
 
 
 class CloudPhotos:
-    """Bucket layout: p/<token> (page, no expiry), tmp/<token>/*.jpg (14-day lifecycle),
+    """Bucket layout: p/<token> (page, no expiry), tmp/<token>/*.jpg (RETENTION_DAYS lifecycle),
     album/<secret>/<token>/*.jpg + album/<secret>/index.html (no expiry). All ops are async;
     ops on one token run in submission order. Failures are logged and counted in `errors`."""
 
     def __init__(self, client, bucket: str, base_url: str, album_secret: str, album: AlbumIndex, executor,
-                 now=_now, retention_days: int = 14):
+                 now=_now, retention_days: int = RETENTION_DAYS):
         self.client, self.bucket, self.base_url, self.secret = client, bucket, base_url, album_secret
         self.album, self.executor, self.now, self.retention_days = album, executor, now, retention_days
         self.errors = 0

@@ -26,7 +26,7 @@ The point is laughs. The quiz is a comedy bit, not a test. The name is a souveni
 
 ## Anti-goals (failure even if it "works")
 
-- A badge that mentions drugs or politics, or gets deeply personal.
+- A badge with drug content, partisan politics (gerrymandering and election-process jokes are fine; see Content rules), or gets deeply personal.
 - A repeated name.
 - A guest waiting on a spinner, or a Wi-Fi blip stopping badges from printing.
 - Real guest names or the private planning sheet ending up in the public repo.
@@ -41,7 +41,7 @@ The point is laughs. The quiz is a comedy bit, not a test. The name is a souveni
 - **Repo:** public GitHub repo `baby-burn-name-generator` under the owner's account. API keys live in a gitignored `.env` on the Pi.
 - **Content privacy (owner decision):** the real names, questions and taglines are private. The public repo ships only a tame `content.sample/`. Real content lives in a gitignored `content/` folder. *Builder's call:* `content/` is a clone of a separate **private** GitHub repo (`baby-burn-content`), so it is versioned and backed up. The app reads `content/` if it exists, otherwise `content.sample/`. Content added in `/admin` on the night is written to `content/` too, never to the public tree.
 - **Timeline:** event is Sat 2026-11-14. Owner works evenings, with focus days Tue 11-03, Thu 11-05, maybe Fri 11-06, and weekends. Hardware first (Tue 11-03), bake-off Wed 11-04, content review Thu–Fri 11-05/06, drills + soak the 11-07/08 weekend, dress rehearsal Thu 11-12, freeze Fri 11-13.
-- **Content rules:** no drugs, no politics, nothing deeply personal. Sex and body jokes allowed but each is flagged `needs_owner: true` and requires explicit owner approval. "Petite/miniature" twists on classic playa names are encouraged.
+- **Content rules:** no drug content, non-partisan politics only, nothing deeply personal. Owner decision, 2026-11-03: gerrymandering and election-process jokes are in (this year's theme), but no real politicians, named parties, or culture-war topics. Sex and body jokes allowed but each is flagged `needs_owner: true` and requires explicit owner approval. "Petite/miniature" twists on classic playa names are encouraged.
 
 ## Decided by the owner
 
