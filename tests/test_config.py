@@ -90,3 +90,12 @@ def test_env_overrides_and_numeric_parsing(tmp_path):
     assert c.transform_timeout_s == 7.5
     assert c.quiz_random_count == 2
     assert c.s3_endpoint_url == "https://x.r2.example"
+
+
+def test_env_example_models_match_config_defaults():
+    from app.config import ROOT, Config
+
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        key, _, val = line.partition("=")
+        if key.endswith("_MODEL") and not line.startswith("#"):
+            assert getattr(Config(), key.lower()) == val, key
