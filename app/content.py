@@ -156,7 +156,7 @@ def _tags(where: str, r: dict, errs: list[str]) -> frozenset[str]:
     if not isinstance(tags, list) or not all(isinstance(t, str) and t for t in tags):
         errs.append(f"{where}: tags must be a list of strings")
         return frozenset()
-    return frozenset(tags)
+    return frozenset(t.lower() for t in tags)  # tags match case-insensitively
 
 
 def _build(raw: dict[str, Any]) -> Content:
@@ -220,6 +220,8 @@ def _build(raw: dict[str, Any]) -> Content:
         # (every option tagged), which the sample content relies on.
         if not fixed and opts and not any(o.correct for o in opts) and not all(o.tags for o in opts):
             errs.append(f"{where}: needs a correct option (or tag every option for a preference question)")
+        if r.get("type") == "single" and sum(o.correct for o in opts) > 1:
+            errs.append(f"{where}: a single-choice question needs exactly one correct option")
         questions.append(Question(str(r.get("id")), str(r.get("type")), str(r.get("prompt")), opts,
                                   quip, str(status), bool(r.get("needs_owner", False)), fixed))
     if sum(q.fixed == "first_burn" for q in questions) != 1:

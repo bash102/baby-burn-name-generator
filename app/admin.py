@@ -109,6 +109,10 @@ def status_bulk():
     ids = d.get("ids")
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         return jsonify(error="ids must be a list of strings"), 400
+    if d.get("status") == "approved" and d.get("include_needs_owner") is not True:  # sent only with the filter on
+        items = getattr(st.content, d["kind"]) if d.get("kind") in KINDS else ()
+        if flagged := [i.id for i in items if i.id in ids and getattr(i, "needs_owner", False)]:
+            return jsonify(error="needs your review, approve with that filter on: " + ", ".join(flagged)), 400
     err = _write(lambda: set_status(st.cfg.content_dir, d.get("kind"), ids, d.get("status")))
     return (jsonify(error=err), 400) if err else jsonify(ok=True)
 
@@ -185,8 +189,8 @@ def reprint():
     badge = next((b for b in list(_st().recent_badges) if b[0] == id_), None)
     if badge is None:
         return jsonify(error="no such badge"), 404
-    _, _, display, tagline, first_burn = badge
-    return _print(render_badge(display, tagline, first_burn))
+    _, _, display, tagline, first_burn, photo_url = badge
+    return _print(render_badge(display, tagline, first_burn, qr_url=photo_url))
 
 
 @bp.post("/test-print")

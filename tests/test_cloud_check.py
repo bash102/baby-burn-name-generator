@@ -5,32 +5,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import cloud_check  # noqa: E402
 
 from app.config import Config  # noqa: E402
+from app.photos import MemoryS3  # noqa: E402
 
 
-class FakeS3:
+class FakeS3(MemoryS3):
+    """Records the S3 calls the kiosk itself makes: put, copy (album share), batch delete (delete)."""
+
     def __init__(self):
+        super().__init__()
         self.calls = []
 
     def put_object(self, **kw):
         self.calls.append(("put", kw))
+        super().put_object(**kw)
 
-    def delete_object(self, **kw):
-        self.calls.append(("delete", kw))
+    def copy_object(self, **kw):
+        self.calls.append(("copy", kw))
+        super().copy_object(**kw)
+
+    def delete_objects(self, **kw):
+        self.calls.append(("delete_objects", kw))
+        super().delete_objects(**kw)
 
 
 CFG = Config(photo_bucket="b", photo_base_url="https://pub-x.r2.dev", s3_endpoint_url="https://a.r2.cloudflarestorage.com")
 
 
-def test_run_puts_prints_url_waits_then_deletes():
+def test_run_puts_copies_prints_url_waits_then_batch_deletes():
     s3, out, seen = FakeS3(), [], []
     url = cloud_check.run(CFG, s3, wait=lambda: seen.append([c[0] for c in s3.calls]), say=out.append)
-    (op, put), (op2, dele) = s3.calls
-    assert (op, op2) == ("put", "delete")
-    assert put["Bucket"] == "b" and put["Key"] == dele["Key"] and put["Key"].startswith("tmp/")
-    assert put["ContentType"].startswith("text/html")
-    assert url == f"https://pub-x.r2.dev/{put['Key']}"
-    assert url in out
-    assert seen == [["put"]]  # waited after put, before delete
+    assert [c[0] for c in s3.calls] == ["put", "copy", "delete_objects"]
+    put, copy, dele = (c[1] for c in s3.calls)
+    assert put["Bucket"] == "b" and put["Key"].startswith("tmp/") and put["ContentType"].startswith("text/html")
+    assert copy["CopySource"] == {"Bucket": "b", "Key": put["Key"]} and copy["Key"].startswith("tmp/")
+    assert {o["Key"] for o in dele["Delete"]["Objects"]} == {put["Key"], copy["Key"]}
+    assert url == f"https://pub-x.r2.dev/{copy['Key']}" and url in out
+    assert seen == [["put", "copy"]]  # waited after put+copy, before delete
+    assert s3.objects == {}
 
 
 def test_deletes_even_if_wait_interrupted():
@@ -43,4 +54,10 @@ def test_deletes_even_if_wait_interrupted():
         cloud_check.run(CFG, s3, wait=boom, say=lambda _: None)
     except KeyboardInterrupt:
         pass
-    assert [c[0] for c in s3.calls] == ["put", "delete"]
+    assert [c[0] for c in s3.calls] == ["put", "copy", "delete_objects"] and s3.objects == {}
+
+
+def test_uses_the_kiosk_s3_client():
+    from app.photos import make_s3_client
+
+    assert cloud_check.make_s3_client is make_s3_client

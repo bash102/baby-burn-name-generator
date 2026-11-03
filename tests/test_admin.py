@@ -162,7 +162,8 @@ def test_status_bulk(k, monkeypatch):
     reloads = []
     real = k.state.reload_content
     monkeypatch.setattr(k.state, "reload_content", lambda: reloads.append(1) or real())
-    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "d2"], "status": "approved"})
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "d2"], "status": "approved",
+                                            "include_needs_owner": True})
     assert r.status_code == 200 and r.get_json() == {"ok": True} and len(reloads) == 1
     assert {"d1", "d2"} <= {n.id for n in k.state.names._pool}
 
@@ -195,3 +196,31 @@ def test_review_copy(k):
     assert "needs your review</label>" in html and "Needs your review: check" in html
     assert "needs owner" not in html.lower()
     assert "(resets to the .env value on restart)" in k.c.get("/admin", headers=AUTH).data.decode()
+
+
+def test_status_bulk_refuses_flagged_approval_unless_included(k):
+    path = k.cfg.content_dir / "names.yaml"
+    before = path.read_bytes()
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "d2"], "status": "approved"})
+    assert r.status_code == 400 and "d2" in r.get_json()["error"] and path.read_bytes() == before
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d2"], "status": "rejected"})
+    assert r.status_code == 200  # only approving a flagged row needs the opt-in
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1"], "status": "approved"})
+    assert r.status_code == 200
+
+
+def test_review_page_approve_all_skips_flagged(k):
+    page = k.c.get("/admin/review?kind=names&status=draft", headers=AUTH).data.decode()
+    assert "include_needs_owner" in page and "skipped" in page
+
+
+def test_reprint_keeps_photo_qr(k, monkeypatch):
+    import app.admin as admin
+
+    calls = []
+    real = admin.render_badge
+    monkeypatch.setattr(admin, "render_badge", lambda *a, **kw: calls.append(kw) or real(*a, **kw))
+    r = k.finish(k.session())
+    (bid,) = (b[0] for b in k.state.recent_badges)
+    assert post(k, "/admin/reprint", json={"id": bid}).status_code == 200
+    assert calls[-1]["qr_url"] == r["photo_url"] and r["photo_url"]

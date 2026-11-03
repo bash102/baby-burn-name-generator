@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 IMAGES = ("original", "dusty")
 ALBUM_CHAIN = "album"  # CloudPhotos chain key for album-page writes; tokens are 22 chars, never this
 HTML = "text/html; charset=utf-8"
+SAVE_TIP = "Tip: press and hold the photo → Save to Photos"
 
 
 def _now() -> datetime:
@@ -184,7 +185,8 @@ def render_photo_page(token: str, *, state: Literal["temp", "album", "deleted"],
     body = (f"<p id=status class=status>{html.escape(status)}</p>"
             f"<div id=photos>{dusty}"
             f"<img src='{src['original']}' alt='Your original photo'>"
-            f"<a class=dl href='{src['original']}' download>Download original</a></div>{album_link}")
+            f"<a class=dl href='{src['original']}' download>Download original</a></div>"
+            f"<p class=note>{SAVE_TIP}</p>{album_link}")
     # album photos never expire: a far-future EXP keeps the 404 handler inert
     script = _GONE_JS % {"exp": json.dumps(exp.isoformat() if exp else "9999-12-31")}
     if exp:
@@ -231,8 +233,9 @@ class MemoryS3:
     def put_object(self, *, Bucket, Key, Body, **kw):
         self.objects[Key] = dict(kw, Body=Body.encode() if isinstance(Body, str) else Body)
 
-    def copy_object(self, *, Bucket, Key, CopySource, **kw):
-        self.objects[Key] = dict(self.objects[CopySource["Key"]])
+    def copy_object(self, *, Bucket, Key, CopySource, MetadataDirective="COPY", **kw):
+        src = self.objects[CopySource["Key"]]
+        self.objects[Key] = dict(kw, Body=src["Body"]) if MetadataDirective == "REPLACE" else dict(src)
 
     def delete_objects(self, *, Bucket, Delete):
         for o in Delete["Objects"]:
@@ -340,10 +343,11 @@ class CloudPhotos:
                 return
             try:
                 for kind, data in (("original", original), ("dusty", dusty)):
-                    if data is not None:
-                        self.client.put_object(
-                            Bucket=self.bucket, Key=self._key(token, st, kind), Body=data, ContentType="image/jpeg",
-                            ContentDisposition=f'attachment; filename="baby-burn-{kind}.jpg"')
+                    if data is not None:  # personal (tmp/) images download as files; album images open inline
+                        save = {} if st["state"] == "album" else {
+                            "ContentDisposition": f'attachment; filename="baby-burn-{kind}.jpg"'}
+                        self.client.put_object(Bucket=self.bucket, Key=self._key(token, st, kind), Body=data,
+                                               ContentType="image/jpeg", **save)
                         st[kind] = True
             finally:  # the page goes up even if an image failed, so the QR never 404s
                 self._put_page(token, st)
@@ -356,9 +360,10 @@ class CloudPhotos:
             if st["state"] != "temp":
                 return st["state"] == "album"
             tmp = [self._key(token, st, k) for k in IMAGES if st[k]]
-            for src in tmp:
+            for src in tmp:  # REPLACE drops the tmp copy's attachment header, so album images open inline
                 self.client.copy_object(Bucket=self.bucket, Key=f"album/{self.secret}/{src[4:]}",
-                                        CopySource={"Bucket": self.bucket, "Key": src})
+                                        CopySource={"Bucket": self.bucket, "Key": src}, MetadataDirective="REPLACE",
+                                        ContentType="image/jpeg")
             st["state"] = "album"
             self.album.add(token, playa_name)
             self._put_page(token, st)

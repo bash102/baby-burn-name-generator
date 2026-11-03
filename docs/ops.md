@@ -22,18 +22,23 @@ Re-running `setup-r2.sh` is safe; it keeps an existing `ALBUM_SECRET`.
 
 ## 2. Pi provisioning
 
-Flash Raspberry Pi OS (bookworm), clone the repo to `/home/pi/baby-burn-name-generator`, then:
+Flash Raspberry Pi OS (bookworm). In Raspberry Pi Imager set the username to `pi` (the service and paths assume `/home/pi`). Clone the repo to `/home/pi/baby-burn-name-generator`, then:
 
 ```
 cd ~/baby-burn-name-generator && bash deploy/setup-pi.sh
 ```
 
-The script installs packages, sets hostname `babyburn`, installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed), adds the QL-800 udev rule (`lsusb` should show `04f9:209b`), generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad), and enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start).
+The script installs packages, sets hostname `babyburn` and timezone America/New_York, installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed), adds the QL-800 udev rule (`lsusb` should show `04f9:209b`), generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad), and enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start).
 
-1. Run `bash deploy/setup-pi.sh` (above). The first run creates `.env` (mode 600) and does not start the service. Re-runs restart the service automatically.
-2. Edit `.env`: `TRANSFORM_PROVIDER` (`openai` or `gemini`), the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`, `ADMIN_PIN`, `PRINTER=usb://0x04f9:0x209b`. If you set up R2 in section 1, copy its values over now by copying the whole `.env` from your Mac:
-   `scp .env pi@babyburn.local:~/baby-burn-name-generator/.env` then `ssh pi@babyburn.local chmod 600 baby-burn-name-generator/.env`. Then set the items above in it; the Pi needs no other change.
-3. Start the service: `sudo systemctl start babyburn` (use `restart` after later edits).
+1. Run `bash deploy/setup-pi.sh` (above). The first run creates `.env` (mode 600) with a random 8-digit `ADMIN_PIN` (printed once; note it) and does not start the service. Re-runs restart the service automatically, unless `content/` is missing.
+2. Edit `.env`: `TRANSFORM_PROVIDER` (`openai` or `gemini`), the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`, `ADMIN_PIN`, `PRINTER=usb://0x04f9:0x209b`. The kiosk refuses to start with a real `PHOTO_BUCKET` and the placeholder `PHOTO_BASE_URL` (`example.com`) or `ALBUM_SECRET` (`change-me` or under 16 characters). If you set up R2 in section 1, copy its values over now by copying the whole `.env` from your Mac:
+   `scp .env pi@babyburn.local:~/baby-burn-name-generator/.env` then `ssh pi@babyburn.local chmod 600 baby-burn-name-generator/.env`. Then set the items above in it (the copy replaces the generated `ADMIN_PIN`, so set a strong one); the Pi needs no other change.
+3. Copy the private content to the Pi (the Pi needs no GitHub access). On your Mac:
+   `rsync -a --delete <private content clone>/ pi@babyburn.local:~/baby-burn-name-generator/content/`
+   Then on the Pi check it loads: `cd ~/baby-burn-name-generator && uv run --env-file .env python -m app.content content/`. Without `content/` the kiosk would serve the public sample content, so `setup-pi.sh` will not start the service until it exists.
+4. Start the service: `sudo systemctl start babyburn` (use `restart` after later edits).
+
+After editing content by hand (on the Pi, or re-syncing from your Mac), run `uv run --env-file .env python -m app.content content/` before restarting; a broken file stops the kiosk from booting.
 
 Logs: `journalctl -u babyburn -f`.
 
@@ -60,9 +65,22 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 - [ ] Test print from the app; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
 - [ ] Bucket lifecycle rule on `tmp/` is 14 days (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
-- [ ] Album page is empty. To clear the album after testing, run `uv run --env-file .env python tools/album_reset.py` (arrives with the kiosk server update) or delete the `album/` prefix in the R2 dashboard.
-- [ ] Cloud check from a phone on cellular: `uv run --env-file .env python tools/cloud_check.py`, open the printed URL on the phone (page loads), then open the bucket root URL (no listing).
+- [ ] Album page is empty and no names are used up: run the freeze reset (section 6a) after the last rehearsal.
+- [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
+- [ ] Cloud check from a phone on cellular: `uv run --env-file .env python tools/cloud_check.py` (it puts, copies and batch-deletes a test page with the kiosk's own client, as share and delete do), open the printed URL on the phone (page loads), then open the bucket root URL (no listing).
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
+
+## 6a. Freeze (Fri 11-13)
+
+After the last rehearsal, reset the event so the party starts clean: every name is available again, the shared album is empty and no rehearsal photos are left on the Pi. Run this ON THE PI, not your Mac: the album index (`data/album.sqlite3`) and the name database live there.
+
+```
+sudo systemctl stop babyburn
+cd ~/baby-burn-name-generator && uv run --env-file .env python tools/reset_event.py   # type yes
+sudo systemctl start babyburn
+```
+
+`reset_event.py` deletes `data/names.sqlite3`, empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own after 14 days.
 
 ## 7. After the party
 

@@ -128,8 +128,8 @@ def test_openai_client_has_no_sdk_retries(monkeypatch):
 
     seen = {}
     monkeypatch.setattr(openai, "OpenAI", lambda **kw: seen.update(kw))
-    T.OpenAIProvider(Config(openai_api_key="k"))
-    assert seen["max_retries"] == 0 and seen["timeout"] == Config().transform_timeout_s
+    T.OpenAIProvider(Config(openai_api_key="k", provider_timeout_s=42))
+    assert seen["max_retries"] == 0 and seen["timeout"] == 42
 
 
 def test_gemini_client_has_no_sdk_retries(monkeypatch):
@@ -137,10 +137,10 @@ def test_gemini_client_has_no_sdk_retries(monkeypatch):
 
     seen = {}
     monkeypatch.setattr(genai, "Client", lambda **kw: seen.update(kw))
-    T.GeminiProvider(Config(gemini_api_key="k"))
+    T.GeminiProvider(Config(gemini_api_key="k", provider_timeout_s=42))
     opts = seen["http_options"]
     assert opts.retry_options.attempts == 1
-    assert opts.timeout == int(Config().transform_timeout_s * 1000)
+    assert opts.timeout == 42000
 
 
 def test_bakeoff_missing_key_skips_provider(tmp_path, monkeypatch, capsys):

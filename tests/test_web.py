@@ -17,7 +17,7 @@ from app.printer import PrintError
 from app.transform import FakeProvider
 
 BASE = "https://ph.example"
-SECRET = "sekret"
+SECRET = "sekret-album-key-16"
 ALBUM_STATUS = "This photo is in the Baby Burn album and stays there."
 T0 = datetime(2026, 11, 14, 18, 30, tzinfo=timezone.utc)
 
@@ -231,6 +231,7 @@ def test_dusty_after_share_goes_to_album(tmp_path, sample_content_dir):
     k.drain()
     assert f"album/{SECRET}/{tok}/dusty.jpg" in k.keys()
     assert f"tmp/{tok}/dusty.jpg" not in k.keys()
+    assert "ContentDisposition" not in k.s3.objects[f"album/{SECRET}/{tok}/dusty.jpg"]  # album images open inline
     assert list((k.cfg.data_dir / "album").glob(f"*{tok}*dusty.jpg"))
 
 
@@ -395,6 +396,9 @@ def test_dev_bucket_when_photo_bucket_unset(tmp_path, sample_content_dir):
 
 def test_real_bucket_needs_base_url_and_secret(tmp_path, sample_content_dir):
     cfg = Config(content_dir=sample_content_dir, data_dir=tmp_path / "data", photo_bucket="b")
+    with pytest.raises(ValueError, match="PHOTO_BASE_URL"):
+        web.create_app(cfg, provider=FakeProvider(delay_s=0), s3=MemoryS3())
+    cfg = Config(content_dir=sample_content_dir, data_dir=tmp_path / "data", photo_bucket="b", photo_base_url=BASE)
     with pytest.raises(ValueError, match="ALBUM_SECRET"):
         web.create_app(cfg, provider=FakeProvider(delay_s=0), s3=MemoryS3())
 
@@ -589,3 +593,108 @@ def test_server_countdown_uses_now():
     assert "This photo will be deleted on Sat Nov 28 (in 10 days, 18 hours). Download it before then." in page
     soon = render_photo_page("tok", now=T0 + timedelta(days=14) - timedelta(minutes=30), **kw)
     assert "<p id=status class=status>This photo is about to be deleted. Download it now if you want it.</p>" in soon
+
+
+@pytest.mark.parametrize("kw, var", [
+    ({"album_secret": "change-me"}, "ALBUM_SECRET"),
+    ({"album_secret": "short-secret"}, "ALBUM_SECRET"),
+    ({"photo_base_url": "https://photos.example.com"}, "PHOTO_BASE_URL"),
+])
+def test_real_bucket_refuses_placeholders(tmp_path, sample_content_dir, kw, var):
+    cfg = Config(content_dir=sample_content_dir, data_dir=tmp_path / "data", photo_bucket="b",
+                 **{"photo_base_url": BASE, "album_secret": SECRET, **kw})
+    with pytest.raises(ValueError, match=var):
+        web.create_app(cfg, provider=FakeProvider(delay_s=0), s3=MemoryS3())
+
+
+def test_abandoned_unfinished_session_deletes_cloud_copy(k):
+    sid = k.session()
+    k.drain()
+    tok = k.sess(sid).token
+    assert f"tmp/{tok}/original.jpg" in k.keys()
+    k.clock.t += k.cfg.session_ttl_s + 1
+    k.state.sessions.expire()
+    k.drain()
+    assert k.keys(tok) == {f"p/{tok}"} and "This photo has been deleted." in k.page(tok)
+
+
+def test_finished_session_expiry_keeps_cloud_copy(k):
+    sid = k.session()
+    k.finish(sid)
+    k.drain()
+    tok = k.sess(sid).token
+    k.clock.t += k.cfg.session_ttl_s + 1
+    k.state.sessions.expire()
+    k.drain()
+    assert f"tmp/{tok}/original.jpg" in k.keys()
+
+
+def test_album_images_inline_tmp_images_download(k):
+    sid = k.session()
+    k.finish(sid)
+    k.drain()
+    tok = k.sess(sid).token
+    assert "attachment" in k.s3.objects[f"tmp/{tok}/original.jpg"]["ContentDisposition"]
+    k.choose(sid, "album")
+    k.drain()
+    for kind in ("original", "dusty"):
+        obj = k.s3.objects[f"album/{SECRET}/{tok}/{kind}.jpg"]
+        assert "ContentDisposition" not in obj and obj["ContentType"] == "image/jpeg"
+
+
+def test_photo_page_has_save_tip():
+    kw = dict(uploaded_at=T0, now=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
+    for state in ("temp", "album"):
+        assert "Tip: press and hold the photo → Save to Photos" in render_photo_page(
+            "tok", state=state, has_dusty=True, **kw)
+
+
+def test_late_dusty_still_uploaded_after_kiosk_gives_up(tmp_path, sample_content_dir):
+    slow = Slow()
+    k = Kiosk(tmp_path, sample_content_dir, provider=slow)
+    sid = k.session()
+    tok = k.sess(sid).token
+    k.finish(sid)
+    k.clock.t += k.cfg.transform_timeout_s + 1
+    assert k.c.get(f"/api/session/{sid}/photo").get_json() == {"status": "failed"}
+    slow.release.set()
+    k.drain()
+    assert f"tmp/{tok}/dusty.jpg" in k.keys()
+
+
+def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir, monkeypatch):
+    """A client that connects and never sends a TLS ClientHello must not block other requests."""
+    import socket
+    import ssl
+    import urllib.request
+
+    pytest.importorskip("cryptography")  # Werkzeug's adhoc cert
+    monkeypatch.setattr(web, "SOCKET_TIMEOUT_S", 2)
+    app = web.create_app(Config(content_dir=sample_content_dir, data_dir=tmp_path / "data"),
+                         provider=FakeProvider(delay_s=0))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    old = socket.getdefaulttimeout()
+    ctx = ssl._create_unverified_context()
+    url = f"https://127.0.0.1:{port}/kiosk.html"
+    idle = None
+    try:
+        threading.Thread(target=web.serve, args=(app, "127.0.0.1", port, "adhoc"), daemon=True).start()
+        deadline = time.monotonic() + 20
+        while True:  # wait until it answers
+            try:
+                urllib.request.urlopen(url, context=ctx, timeout=5).read()
+                break
+            except OSError:
+                assert time.monotonic() < deadline, "server never came up"
+                time.sleep(0.2)
+        idle = socket.create_connection(("127.0.0.1", port))  # stalls the TLS handshake
+        time.sleep(0.2)
+        t0 = time.monotonic()
+        body = urllib.request.urlopen(url, context=ctx, timeout=8).read()
+        assert b"<" in body and time.monotonic() - t0 < 8
+    finally:
+        socket.setdefaulttimeout(old)
+        if idle:
+            idle.close()

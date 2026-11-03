@@ -22,14 +22,14 @@ class Config:
     gemini_vision_model: str = "gemini-3.5-flash-lite"
     printer: str = "file"  # usb://0x04f9:0x209b | file
     admin_pin: str = ""
-    transform_timeout_s: float = 25
+    transform_timeout_s: float = 25  # kiosk display budget: /photo reports failed after this
+    provider_timeout_s: float = 90  # AI HTTP timeout; a late dusty image still reaches the phone page
     quiz_random_count: int = 4
     low_names_warning: int = 25
     session_ttl_s: int = 600
     photo_bucket: str = ""
     photo_base_url: str = ""  # trailing slash stripped by from_env
     album_secret: str = ""
-    photo_retention_days: int = 14
     s3_endpoint_url: str | None = None  # None = AWS
     s3_region: str = "auto"
     s3_access_key_id: str = ""

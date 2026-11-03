@@ -50,7 +50,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'>{{ p }}</button> {% endfor %}</p>
 <h2>Printing</h2>
 <p><button data-post="/admin/test-print">Test print</button></p>
-<table>{% for bid, nid, display, tagline, fb in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
+<table>{% for bid, nid, display, tagline, fb, photo in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
 <td><button data-post="/admin/reprint" data-body='{{ {"id": bid}|tojson|forceescape }}'>Reprint</button></td></tr>
 {% else %}<tr><td>No badges printed yet.</td></tr>{% endfor %}</table>
 
@@ -103,7 +103,7 @@ document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (b.dataset.post.endsWith("provider")) location.reload(); else b.textContent += " ✓";
   }).catch(e => flash("Failed: " + e.message)));
-const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }};
+const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};
 function shown(row, s) {
   row.dataset.status = s; row.querySelector(".st").textContent = s;
   if (want && want !== s) { row.classList.add("gone"); count(); }
@@ -114,10 +114,15 @@ document.querySelectorAll(".row .acts button").forEach(b => b.onclick = () =>
   setStatus(b.closest(".row"), b.dataset.s).then(() => flash("")).catch(e => flash("Failed: " + e.message)));
 const all = document.getElementById("all-yes");
 if (all) all.onclick = async () => {
-  const rows = [...document.querySelectorAll(".row:not(.gone)")].filter(r => r.dataset.status !== "approved");
-  if (!rows.length || !confirm("Approve all " + rows.length + " visible " + kind + "?")) return;
+  // Rows flagged "needs your review" are approved in bulk only with that filter on (the server enforces it too).
+  const open = [...document.querySelectorAll(".row:not(.gone)")].filter(r => r.dataset.status !== "approved");
+  const rows = flaggedOn ? open : open.filter(r => !r.classList.contains("needs")), skipped = open.length - rows.length;
+  const note = skipped ? "\n\n" + skipped + " flagged \"needs your review\" rows skipped; turn on that filter to approve them." : "";
+  if (!rows.length) { if (skipped) flash(skipped + " flagged rows skipped; turn on \"needs your review\" to approve them."); return; }
+  if (!confirm("Approve " + rows.length + " visible " + kind + "?" + note)) return;
   try {
-    await post("/admin/status-bulk", {kind, ids: rows.map(r => r.dataset.id), status: "approved"});
+    await post("/admin/status-bulk", {kind, ids: rows.map(r => r.dataset.id), status: "approved",
+                                      ...(flaggedOn ? {include_needs_owner: true} : {})});
     rows.forEach(r => shown(r, "approved")); flash("");
   } catch (e) { flash("Failed, nothing changed: " + e.message); }
 };

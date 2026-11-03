@@ -3,6 +3,7 @@ import argparse
 import io
 import logging
 import random
+import socket
 import threading
 import time
 import uuid
@@ -26,6 +27,7 @@ from app.transform import Provider, get_provider
 
 log = logging.getLogger(__name__)
 CLOUD_WAIT_S = 10
+SOCKET_TIMEOUT_S = 10  # seconds a client may stall a socket (TLS handshake, slow upload)
 CHOICES = {"album", "delete", "done"}
 DEV_CLOUD = "/cloud"  # dev-only route serving the in-memory bucket when PHOTO_BUCKET is unset
 
@@ -42,7 +44,7 @@ class AppState:
     photos: PhotoStore
     cloud: CloudPhotos
     content_error: str | None = None
-    recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (id, name_id, display, tagline, first_burn)
+    recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (id, name_id, display, tagline, first_burn, photo_url)
     rng: random.Random = field(default_factory=random.SystemRandom)
 
     def reload_content(self) -> None:
@@ -77,12 +79,14 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         log.warning("PHOTO_BUCKET is unset: photos go to an in-memory bucket served at %s/ (dev only)", DEV_CLOUD)
         s3 = MemoryS3()
     dev_bucket = isinstance(s3, MemoryS3) and not cfg.photo_bucket
-    if not dev_bucket and not (cfg.photo_base_url and cfg.album_secret):
-        raise ValueError("PHOTO_BASE_URL and ALBUM_SECRET must be set when PHOTO_BUCKET is set")
+    if not dev_bucket:
+        if not cfg.photo_base_url or "example.com" in cfg.photo_base_url:
+            raise ValueError("PHOTO_BASE_URL must be the bucket's real public URL when PHOTO_BUCKET is set")
+        if cfg.album_secret == "change-me" or len(cfg.album_secret) < 16:
+            raise ValueError("ALBUM_SECRET must be a random string of 16+ characters when PHOTO_BUCKET is set")
     base_url = DEV_CLOUD if dev_bucket else cfg.photo_base_url
     cloud = CloudPhotos(s3 or make_s3_client(cfg), cfg.photo_bucket, base_url, cfg.album_secret or "dev",
-                        AlbumIndex(cfg.data_dir / "album.sqlite3"), ThreadPoolExecutor(4, "cloud"),
-                        retention_days=cfg.photo_retention_days)
+                        AlbumIndex(cfg.data_dir / "album.sqlite3"), ThreadPoolExecutor(4, "cloud"))
 
     def on_photo(s: Session) -> None:  # before the transform starts, so dusty never lands first
         photos.save_original(s.token, s.photo)
@@ -97,8 +101,15 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
             log.exception("local dusty save failed")
         cloud.upload(s.token, dusty=jpeg)
 
+    def on_expire(s: Session) -> None:
+        if not s.token:
+            return
+        photos.discard(s.token)
+        if s.result is None:  # abandoned before the name: the guest never saw the QR, so drop the cloud copy
+            cloud.delete(s.token)
+
     sessions = SessionStore(ThreadPoolExecutor(8, "transform"), cfg.session_ttl_s, now,
-                            on_photo=on_photo, on_dusty=on_dusty, on_expire=lambda s: s.token and photos.discard(s.token))
+                            on_photo=on_photo, on_dusty=on_dusty, on_expire=on_expire)
     st = AppState(cfg, content, names, printer or make_printer(cfg.printer, cfg.data_dir / "prints"),
                   cfg.transform_provider, provider or get_provider(cfg.transform_provider, cfg),
                   sessions, photos, cloud)
@@ -263,7 +274,7 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     except Exception:  # any printer fault (USB, OSError) must not lose the name
         log.exception("print failed for %s", display)
         printed = False
-    st.recent_badges.append((uuid.uuid4().hex, name_id, display, tagline, first_burn))
+    st.recent_badges.append((uuid.uuid4().hex, name_id, display, tagline, first_burn, photo_url))
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,
@@ -287,13 +298,19 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(Config.from_env())
     threading.Thread(target=_expire_loop, args=(app.extensions["babyburn"].sessions,), daemon=True).start()
-    # ceiling: Flask dev server is fine for one kiosk; switch to gunicorn if more clients appear.
     if args.dev:
-        app.run("127.0.0.1", args.port, threaded=True)
+        serve(app, "127.0.0.1", args.port)
     else:
         certs = ROOT / "certs"
-        app.run("0.0.0.0", 443, threaded=True,
-                ssl_context=(str(certs / "babyburn.local.pem"), str(certs / "babyburn.local-key.pem")))
+        serve(app, "0.0.0.0", 443, (str(certs / "babyburn.local.pem"), str(certs / "babyburn.local-key.pem")))
+
+
+def serve(app: Flask, host: str, port: int, ssl_context=None) -> None:
+    # ceiling: the Werkzeug dev server does the TLS handshake in its single accept thread, so one stalled
+    # client froze every request; a socket timeout bounds that stall to SOCKET_TIMEOUT_S. Upgrade: gunicorn
+    # with gthread workers (handshakes off the accept path) if more clients or a busier network appear.
+    socket.setdefaulttimeout(SOCKET_TIMEOUT_S)
+    app.run(host, port, threaded=True, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":
