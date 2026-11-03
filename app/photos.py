@@ -236,6 +236,11 @@ def put_html(client, bucket: str, key: str, page: str) -> None:
     client.put_object(Bucket=bucket, Key=key, Body=page.encode(), ContentType=HTML, CacheControl="no-cache")
 
 
+def delete_keys(client, bucket: str, keys: list[str]) -> None:
+    for i in range(0, len(keys), 1000):  # DeleteObjects takes at most 1000 keys
+        client.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in keys[i:i + 1000]], "Quiet": True})
+
+
 def put_album_page(client, bucket: str, base_url: str, secret: str, entries: list[tuple[str, str]]) -> None:
     put_html(client, bucket, album_page_key(secret), render_album_page(entries, f"{base_url}/album/{secret}"))
 
@@ -328,7 +333,7 @@ class CloudPhotos:
             self._put_page(token, st)
             self._put_album_page()
             if tmp:
-                self.client.delete_objects(Bucket=self.bucket, Delete={"Objects": [{"Key": k} for k in tmp], "Quiet": True})
+                delete_keys(self.client, self.bucket, tmp)
 
         return self._run(token, op)
 
@@ -336,7 +341,7 @@ class CloudPhotos:
         def op(st):
             st["state"] = "deleted"
             keys = [f"{p}/{token}/{k}.jpg" for p in ("tmp", f"album/{self.secret}") for k in IMAGES]
-            self.client.delete_objects(Bucket=self.bucket, Delete={"Objects": [{"Key": k} for k in keys], "Quiet": True})
+            delete_keys(self.client, self.bucket, keys)
             self.album.remove(token)
             self._put_page(token, st)
             self._put_album_page()

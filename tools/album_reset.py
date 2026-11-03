@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import Config  # noqa: E402
-from app.photos import AlbumIndex, album_page_key, make_s3_client, put_album_page, put_html, render_photo_page  # noqa: E402
+from app.photos import AlbumIndex, album_page_key, delete_keys, make_s3_client, put_album_page, put_html, render_photo_page  # noqa: E402
 
 
 def _keys(s3, bucket: str, prefix: str) -> list[str]:
@@ -30,8 +30,7 @@ def run(cfg: Config, s3, album: AlbumIndex, ask=input, say=print) -> int:
     if ask("Type yes to empty the album: ").strip() != "yes":
         say("Aborted, nothing deleted.")
         return 0
-    for i in range(0, len(keys), 1000):  # DeleteObjects takes at most 1000 keys
-        s3.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in keys[i:i + 1000]], "Quiet": True})
+    delete_keys(s3, bucket, keys)
     album_url = f"{cfg.photo_base_url}/{album_page_key(cfg.album_secret)}"
     for token, _ in entries:
         album.remove(token)

@@ -52,6 +52,10 @@ def _write(fn):
     return st.content_error  # on a failed reload the kiosk keeps the old content
 
 
+def _body():
+    return request.get_json(silent=True) or request.form
+
+
 def _banner(st):
     return SAMPLE_BANNER if st.cfg.content_is_sample else None
 
@@ -86,7 +90,7 @@ def review():
 
 @bp.post("/status")
 def status():
-    d = request.get_json(silent=True) or request.form
+    d = _body()
     st = _st()
     err = _write(lambda: set_status(st.cfg.content_dir, d.get("kind"), d.get("id"), d.get("status")))
     return (jsonify(error=err), 400) if err else jsonify(ok=True)
@@ -160,7 +164,7 @@ def _print(img):
 
 @bp.post("/reprint")
 def reprint():
-    d = request.get_json(silent=True) or request.form
+    d = _body()
     try:
         _, display, tagline, first_burn = list(_st().recent_badges)[int(d["index"])]
     except (KeyError, ValueError, IndexError, TypeError):
@@ -175,7 +179,7 @@ def test_print():
 
 @bp.post("/provider")
 def provider():
-    st, name = _st(), (request.get_json(silent=True) or request.form).get("name")
+    st, name = _st(), _body().get("name")
     try:
         p = get_provider(name, st.cfg)
     except ValueError as e:
