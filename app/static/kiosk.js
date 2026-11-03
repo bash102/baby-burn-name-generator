@@ -27,21 +27,26 @@ const COPY = {
   delete: "Delete my photo",
   done: "Done",
   thanks: "Thanks for burning with us!",
+  deleteFailed: "Couldn't delete your photo. Please try again.",
+  tryAgain: "Try again",
   thanksSub: "Hydrate. Stay dusty.",
   error: "The dust got in the gears. Tap to start over.",
 };
-const IDLE_MS = 20000, FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 30000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
+// Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal and Take it home. Reveal auto-advances after REVEAL_ADVANCE_MS if there is a photo.
+const IDLE_MS = 20000, IDLE_LONG_MS = 45000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000;
+const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 30000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
 const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam
 const STUB_MODE = new URLSearchParams(location.search).get("stub");
 
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Retries 3x (0.5/1/2 s) on network errors or 5xx; returns the last response, or throws the last error.
+const once = (path, opts) => STUB ? stubApi(path, opts) : fetch(path, opts);
 async function api(path, opts = {}) {
   for (let i = 0; ; i++) {
     let res;
     try {
-      res = STUB ? await stubApi(path, opts) : await fetch(path, opts);
+      res = await once(path, opts);
       if (res.status < 500 || i >= 3) return res;
     } catch (e) { if (i >= 3) throw e; }
     await sleep(500 * 2 ** i);
@@ -71,6 +76,7 @@ async function stubApi(path, opts) {
   if (path === "/api/quiz") return json(STUB_QUIZ);
   if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), photo_url: "https://example.invalid/p/stub" });
   if (path.endsWith("/qr.svg")) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 5h2v1H6zM5 7h3v1H5z"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
+  if (path.endsWith("/photo-choice") && STUB_MODE === "faildelete" && JSON.parse(opts.body).choice === "delete") return json({ error: "boom" }, 500);
   if (path.endsWith("/photo-choice")) { window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice); return json({ ok: true }); }
   if (path.endsWith("/photo") && m === "GET") {
     if (STUB_MODE === "fail") return json({ status: "failed" });
@@ -99,8 +105,14 @@ let S;           // per-guest state
 let stream = null;
 let epoch = 0;   // bumped on every screen change so stale async work is ignored
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
-function show(...kids) { epoch++; root.replaceChildren(...kids.filter(Boolean)); }
-function newGuest() { S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false }; }
+let idleMs = IDLE_MS;
+function show(...kids) { epoch++; idleMs = IDLE_MS; root.replaceChildren(...kids.filter(Boolean)); bumpIdle(); }
+const longIdle = () => { idleMs = IDLE_LONG_MS; bumpIdle(); };
+let urls = [];   // object URLs for the current guest, revoked on reset
+const objUrl = blob => { const u = URL.createObjectURL(blob); urls.push(u); return u; };
+function newGuest() {
+  urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+  S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false }; }
 
 function toStart() {
   stopCamera(); newGuest();
@@ -108,9 +120,9 @@ function toStart() {
     btn(COPY.startTitle, snapScreen, "big"), btn(COPY.startSkipPhoto, skipPhoto, "skip"));
 }
 
-// Idle: 20 s without a touch returns to Start (idle on the take-home screen counts as Done).
+// Idle: no touch for idleMs returns to Start (idle on the take-home screen counts as Done).
 let idleT;
-function bumpIdle() { clearTimeout(idleT); idleT = setTimeout(idle, IDLE_MS); }
+function bumpIdle() { clearTimeout(idleT); idleT = setTimeout(idle, idleMs); }
 function idle() { if (S.onTakeHome) choose("done"); toStart(); }
 addEventListener("pointerdown", bumpIdle, true);
 
@@ -134,6 +146,8 @@ async function snapScreen() {
   const video = h("video", { autoplay: "", playsinline: "", muted: "" });
   const count = h("div", { class: "count" });
   const shutter = btn(COPY.snapShutter, () => countdown(video, count, shutter), "big");
+  shutter.disabled = true;   // enabled once the video is actually playing
+  video.addEventListener("playing", () => { shutter.disabled = false; });
   show(h("h2", {}, COPY.snapTitle), h("div", { class: "cam" }, video, count),
     h("div", { class: "row" }, shutter, btn(COPY.skipPhoto, skipPhoto, "skip")));
   const e = epoch;
@@ -154,7 +168,8 @@ async function countdown(video, count, shutter) {
   c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
   const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
   stopCamera();
-  S.snapshot = URL.createObjectURL(blob);
+  if (e !== epoch) return;
+  S.snapshot = objUrl(blob);
   try { await createSession(blob); } catch { return e === epoch ? fail() : null; }
   if (e === epoch) quizScreen();
 }
@@ -221,7 +236,12 @@ async function finish() {
     h("div", { class: "row" },
       S.hasPhoto ? btn(COPY.takeHome, takeHomeScreen, "big") : null,
       btn(S.hasPhoto ? COPY.skip : COPY.done, toStart, "skip")));
-  if (S.hasPhoto) pollPhoto(photo, epoch);
+  if (S.hasPhoto) {
+    longIdle();
+    const e2 = epoch;
+    pollPhoto(photo, e2);
+    setTimeout(() => { if (e2 === epoch) takeHomeScreen(); }, REVEAL_ADVANCE_MS);
+  }
 }
 async function pollPhoto(box, e) {
   const t0 = Date.now();
@@ -231,28 +251,40 @@ async function pollPhoto(box, e) {
   while (e === epoch) {
     if (Date.now() - t0 > PHOTO_TIMEOUT_MS) return useOriginal();
     try {
-      const res = await api(`/api/session/${S.id}/photo`);
-      if ((res.headers.get("Content-Type") || "").startsWith("image/")) {
-        const url = URL.createObjectURL(await res.blob());
-        if (e === epoch) box.replaceChildren(h("img", { src: url, alt: "" }));
-        return;
-      }
-      if (res.status === 200 && (await res.json()).status === "failed") { if (e === epoch) useOriginal(); return; }
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), POLL_FETCH_MS);
+      let blob, failed = false;
+      try {
+        const res = await once(`/api/session/${S.id}/photo`, { signal: ac.signal });
+        if (res.status === 404) failed = true;   // expired
+        else if ((res.headers.get("Content-Type") || "").startsWith("image/")) blob = await res.blob();
+        else if (res.status === 200) failed = (await res.json()).status === "failed";
+      } finally { clearTimeout(t); }
+      if (blob) { if (e === epoch) box.replaceChildren(h("img", { src: objUrl(blob), alt: "" })); return; }
+      if (failed) { if (e === epoch) useOriginal(); return; }
     } catch { /* keep polling until timeout */ }
     await sleep(POLL_MS);
   }
 }
 
 // ---- Take it home ----
-function choose(choice) { return postJSON(`/api/session/${S.id}/photo-choice`, { choice }).catch(() => {}); }
+async function choose(choice) {
+  try { return (await postJSON(`/api/session/${S.id}/photo-choice`, { choice })).ok; } catch { return false; }
+}
+async function deletePhoto() {
+  const e = epoch;
+  if (await choose("delete")) return e === epoch ? thanks() : null;
+  if (e !== epoch) return;
+  show(h("h2", {}, COPY.deleteFailed), h("div", { class: "row" }, btn(COPY.tryAgain, deletePhoto, "big"), btn(COPY.done, () => { choose("done"); thanks(); }, "skip")));
+}
 function takeHomeScreen() {
   S.onTakeHome = true;
-  const go = choice => { S.onTakeHome = false; choose(choice); thanks(); };
+  const go = choice => { S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
   const qr = h("img", { class: "qr", alt: "QR code" });
-  api(`/api/session/${S.id}/qr.svg`).then(r => r.blob()).then(b => { qr.src = URL.createObjectURL(b); }).catch(() => {});
+  api(`/api/session/${S.id}/qr.svg`).then(r => r.blob()).then(b => { qr.src = objUrl(b); }).catch(() => {});
   show(h("h2", {}, COPY.qrTitle), qr,
     h("p", {}, COPY.qrScan),
     h("div", { class: "row" }, btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")));
+  longIdle();
 }
 function thanks() {
   show(h("h1", {}, COPY.thanks), h("p", {}, COPY.thanksSub));
