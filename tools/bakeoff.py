@@ -7,6 +7,7 @@ import argparse
 import html
 import shutil
 import time
+import urllib.parse
 from pathlib import Path
 
 import app.transform as T
@@ -30,7 +31,12 @@ def main() -> None:
     if args.prompt_file:
         T.DUSTY_PROMPT = args.prompt_file.read_text().strip()  # providers read the module global
     cfg = Config.from_env()
-    providers = {n: T.get_provider(n, cfg) for n in args.providers}
+    providers = {}
+    for n in args.providers:
+        if n != "fake" and not getattr(cfg, f"{n}_api_key", ""):
+            print(f"skipping {n}: set {n.upper()}_API_KEY")
+            continue
+        providers[n] = T.get_provider(n, cfg)
     if "fake" in providers:
         providers["fake"].delay_s = 0
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -39,7 +45,8 @@ def main() -> None:
     rows = []
     for photo in photos:
         shutil.copy(photo, args.out_dir / f"orig_{photo.name}")
-        cells = [f'<td><img src="orig_{html.escape(photo.name)}"><br>{html.escape(photo.name)}</td>']
+        orig_src = html.escape(urllib.parse.quote(f"orig_{photo.name}"))
+        cells = [f'<td><img src="{orig_src}"><br>{html.escape(photo.name)}</td>']
         for name, prov in providers.items():
             start = time.monotonic()
             try:
@@ -47,7 +54,8 @@ def main() -> None:
                 secs = time.monotonic() - start
                 fname = f"{name}_{photo.stem}.jpg"
                 (args.out_dir / fname).write_bytes(out)
-                cells.append(f'<td><img src="{html.escape(fname)}"><br>{secs:.1f}s, {len(out) // 1024} KB</td>')
+                src = html.escape(urllib.parse.quote(fname))
+                cells.append(f'<td><img src="{src}"><br>{secs:.1f}s, {len(out) // 1024} KB</td>')
             except Exception as e:  # keep going; record the failure
                 secs = time.monotonic() - start
                 cells.append(f"<td>ERROR after {secs:.1f}s: {html.escape(repr(e))}</td>")

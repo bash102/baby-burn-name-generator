@@ -112,3 +112,46 @@ def test_bakeoff_fake_smoke(tmp_path, monkeypatch):
     bakeoff.main()
     html = (out / "index.html").read_text()
     assert "a.jpg" in html and "fake" in html
+
+
+def test_gemini_blocked_candidate_raises_clear_error():
+    class Models:
+        def generate_content(self, **kw):
+            return SimpleNamespace(candidates=[SimpleNamespace(content=None, finish_reason="SAFETY")])
+
+    with pytest.raises(RuntimeError, match="Gemini returned no image.*SAFETY"):
+        T.GeminiProvider(Config(), client=SimpleNamespace(models=Models())).transform(jpeg())
+
+
+def test_openai_client_has_no_sdk_retries(monkeypatch):
+    import openai
+
+    seen = {}
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: seen.update(kw))
+    T.OpenAIProvider(Config(openai_api_key="k"))
+    assert seen["max_retries"] == 0 and seen["timeout"] == Config().transform_timeout_s
+
+
+def test_gemini_client_has_no_sdk_retries(monkeypatch):
+    from google import genai
+
+    seen = {}
+    monkeypatch.setattr(genai, "Client", lambda **kw: seen.update(kw))
+    T.GeminiProvider(Config(gemini_api_key="k"))
+    opts = seen["http_options"]
+    assert opts.retry_options.attempts == 1
+    assert opts.timeout == int(Config().transform_timeout_s * 1000)
+
+
+def test_bakeoff_missing_key_skips_provider(tmp_path, monkeypatch, capsys):
+    photos, out = tmp_path / "p", tmp_path / "o"
+    photos.mkdir()
+    (photos / "a b.jpg").write_bytes(jpeg())
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(sys, "argv", ["bakeoff", str(photos), str(out), "--providers", "openai", "fake"])
+    from tools import bakeoff
+
+    bakeoff.main()
+    assert "OPENAI_API_KEY" in capsys.readouterr().out
+    html = (out / "index.html").read_text()
+    assert "orig_a%20b.jpg" in html and "openai" not in html

@@ -72,7 +72,7 @@ class OpenAIProvider:
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(api_key=cfg.openai_api_key, timeout=cfg.transform_timeout_s)
+            client = OpenAI(api_key=cfg.openai_api_key, timeout=cfg.transform_timeout_s, max_retries=0)
         self.client = client
 
     def transform(self, jpeg: bytes) -> bytes:
@@ -104,7 +104,10 @@ class GeminiProvider:
 
             client = genai.Client(
                 api_key=cfg.gemini_api_key,
-                http_options=types.HttpOptions(timeout=int(cfg.transform_timeout_s * 1000)),
+                http_options=types.HttpOptions(
+                    timeout=int(cfg.transform_timeout_s * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1),  # one try; caller owns the budget
+                ),
             )
         self.client = client
 
@@ -119,10 +122,11 @@ class GeminiProvider:
             model=self.cfg.gemini_image_model, contents=[DUSTY_PROMPT, self._part(jpeg)]
         )
         for cand in res.candidates or []:
-            for part in cand.content.parts or []:
+            for part in getattr(cand.content, "parts", None) or []:  # content is None when blocked
                 if part.inline_data and part.inline_data.data:
                     return _to_jpeg(part.inline_data.data)
-        raise RuntimeError("Gemini returned no image")
+        reasons = [str(getattr(c, "finish_reason", None)) for c in res.candidates or []]
+        raise RuntimeError(f"Gemini returned no image (finish_reason: {', '.join(reasons) or 'no candidates'})")
 
     def tag(self, jpeg: bytes, vocab: Collection[str]) -> set[str]:
         res = self.client.models.generate_content(
