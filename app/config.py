@@ -16,10 +16,10 @@ class Config:
     transform_provider: str = "fake"  # openai | gemini | fake
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    openai_image_model: str = "gpt-image-1"
-    openai_vision_model: str = "gpt-4.1-mini"
-    gemini_image_model: str = "gemini-2.5-flash-image"
-    gemini_vision_model: str = "gemini-2.5-flash"
+    openai_image_model: str = "gpt-image-2.5-flare"
+    openai_vision_model: str = "gpt-5-mini"
+    gemini_image_model: str = "gemini-3.1-flash-image"
+    gemini_vision_model: str = "gemini-3.5-flash-lite"
     printer: str = "file"  # usb://0x04f9:0x209b | file
     admin_pin: str = ""
     transform_timeout_s: float = 25
