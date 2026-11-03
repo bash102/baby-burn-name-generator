@@ -10,8 +10,15 @@ badge, plus an AI "dusty baby" photo hosted on Cloudflare R2.
 uv run --python 3.11 --extra dev pytest -q
 ```
 
-Copy `.env.example` to `.env` and adjust. With no `.env` the app uses the fake
-transform provider, file printer, and `content.sample/`.
+The app runs from the checkout, not as an installed package. Settings come
+from environment variables (see `.env.example` for every variable). The app
+does not read `.env` itself:
+
+- Mac: `uv run --env-file .env ...`
+- Pi: the systemd unit's `EnvironmentFile=`
+
+With nothing set it uses the fake transform provider, file printer, and
+`content.sample/`.
 
 ## Docs
 
@@ -22,4 +29,4 @@ transform provider, file printer, and `content.sample/`.
 
 `content.sample/` is tame placeholder content (names, questions, taglines).
 Real content lives in a separate private repo, cloned into `content/`
-(git-ignored). Set `CONTENT_DIR` to point elsewhere.
+(git-ignored). `CONTENT_DIR` overrides the location.

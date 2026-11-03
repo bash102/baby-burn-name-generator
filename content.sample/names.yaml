@@ -8,13 +8,13 @@
 - {id: whiteout-wiggles, name: "Whiteout Wiggles", tags: [dust], status: approved, needs_owner: false, note: ""}
 - {id: glitter-bomb, name: "Glitter Bomb", tags: [sparkle], status: approved, needs_owner: false, note: ""}
 - {id: sparkle-pants, name: "Sparkle Pants", tags: [sparkle], status: approved, needs_owner: false, note: ""}
-- {id: disco-dumpling, name: "Disco Dumpling", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
+- {id: tecate-tot, name: "Tecate Tot", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
 - {id: blinky-baby, name: "Blinky Baby", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
 - {id: fuzzy-yeti, name: "Fuzzy Yeti", tags: [beast], status: approved, needs_owner: false, note: ""}
 - {id: moop-monster, name: "Moop Monster", tags: [beast], status: approved, needs_owner: false, note: ""}
 - {id: captain-crumbs, name: "Captain Crumbs", tags: [beast], status: approved, needs_owner: false, note: ""}
 - {id: sleepy-sasquatch, name: "Sleepy Sasquatch", tags: [beast, night], status: approved, needs_owner: false, note: ""}
-- {id: midnight-muffin, name: "Midnight Muffin", tags: [night], status: approved, needs_owner: false, note: ""}
-- {id: moonbeam-munchkin, name: "Moonbeam Munchkin", tags: [night], status: approved, needs_owner: false, note: ""}
+- {id: moop-patrol-pip, name: "Moop Patrol Pip", tags: [night], status: approved, needs_owner: false, note: ""}
+- {id: rebar-baby, name: "Rebar Baby", tags: [night], status: approved, needs_owner: false, note: ""}
 - {id: dawn-patrol-pip, name: "Dawn Patrol Pip", tags: [night], status: approved, needs_owner: false, note: ""}
 - {id: tiny-temple-keeper, name: "Tiny Temple Keeper", tags: [night, gnome], status: approved, needs_owner: false, note: ""}

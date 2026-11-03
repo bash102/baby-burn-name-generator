@@ -19,3 +19,6 @@ dev = ["pytest"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.uv]
+package = false  # run from the checkout; ROOT is the repo root

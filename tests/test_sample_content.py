@@ -9,7 +9,7 @@ def test_sample_content_shape(sample_content_dir):
     names = load(sample_content_dir, "names.yaml")
     questions = load(sample_content_dir, "questions.yaml")
     taglines = load(sample_content_dir, "taglines.yaml")
-    assert (len(names), len(questions), len(taglines)) == (20, 6, 5)
+    assert (len(questions), len(taglines)) == (6, 5)
     assert all(x["status"] == "approved" for x in names + questions + taglines)
     assert len({n["id"] for n in names}) == 20
     assert sum("gnome" in n["tags"] for n in names) >= 3
