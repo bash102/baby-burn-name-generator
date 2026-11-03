@@ -287,7 +287,7 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(Config.from_env())
     threading.Thread(target=_expire_loop, args=(app.extensions["babyburn"].sessions,), daemon=True).start()
-    # ponytail: Flask dev server is fine for one kiosk; switch to gunicorn if more clients appear.
+    # ceiling: Flask dev server is fine for one kiosk; switch to gunicorn if more clients appear.
     if args.dev:
         app.run("127.0.0.1", args.port, threaded=True)
     else:

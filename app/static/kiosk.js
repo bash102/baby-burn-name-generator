@@ -26,6 +26,7 @@ const COPY = {
   delete: "Delete my photo",
   done: "Done",
   thanks: "Thanks for burning with us!",
+  albumFailed: "Couldn't add your photo to the album. Try again?",
   deleteFailed: "Couldn't delete your photo. Please try again.",
   tryAgain: "Try again",
   thanksSub: "Hydrate. Stay dusty.",
@@ -80,6 +81,7 @@ async function stubApi(path, opts) {
   if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), photo_url: "https://example.invalid/p/stub" });
   if (path.endsWith("/qr.svg")) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 5h2v1H6zM5 7h3v1H5z"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
   if (path.endsWith("/photo-choice") && STUB_MODE === "faildelete" && JSON.parse(opts.body).choice === "delete") return json({ error: "boom" }, 500);
+  if (path.endsWith("/photo-choice") && STUB_MODE === "failalbum" && JSON.parse(opts.body).choice === "album") return json({ ok: false }, 502);
   if (path.endsWith("/photo-choice")) { window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice); return json({ ok: true }); }
   if (path.endsWith("/photo") && m === "GET") {
     if (STUB_MODE === "fail") return json({ status: "failed" });
@@ -274,18 +276,18 @@ async function pollPhoto(box, e) {
 async function choose(choice) {
   try { return (await postJSON(`/api/session/${S.id}/photo-choice`, { choice })).ok; } catch { return false; }
 }
-async function deletePhoto() {
+async function applyChoice(choice, failedText) {
   const e = epoch;
-  if (await choose("delete")) return e === epoch ? thanks() : null;
+  if (await choose(choice)) return e === epoch ? thanks() : null;
   if (e !== epoch) return;
-  const retry = btn(COPY.tryAgain, () => { lockChoices(); deletePhoto(); }, "big");
+  const retry = btn(COPY.tryAgain, () => { lockChoices(); applyChoice(choice, failedText); }, "big");
   const done = btn(COPY.done, () => { lockChoices(); choose("done"); thanks(); }, "skip");
   const lockChoices = () => { retry.disabled = done.disabled = true; };
-  show(h("h2", {}, COPY.deleteFailed), h("div", { class: "row" }, retry, done));
+  show(h("h2", {}, failedText), h("div", { class: "row" }, retry, done));
 }
 function takeHomeScreen() {
   S.onTakeHome = true;
-  const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
+  const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") applyChoice(choice, COPY.deleteFailed); else if (choice === "album") applyChoice(choice, COPY.albumFailed); else { choose(choice); thanks(); } };
   const btns = [btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")];
   const qr = h("img", { class: "qr", alt: "QR code" }), qrScan = h("p", {}, COPY.qrScan);
   const noQr = () => { qr.style.display = qrScan.style.display = "none"; };   // keep the buttons; just drop the QR area

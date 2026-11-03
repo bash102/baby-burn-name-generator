@@ -305,7 +305,7 @@ class CloudPhotos:
         return fut
 
     def _run(self, token: str, fn) -> Future:
-        # ponytail: _st is kept for the process lifetime (one small dict per guest); pruning it when the
+        # ceiling: _st is kept for the process lifetime (one small dict per guest); pruning it when the
         # chain drains would forget "album"/"deleted" before a late dusty upload arrives.
         return self._chain(token, lambda: fn(self._st.setdefault(
             token, {"state": "temp", "uploaded_at": self.now(), "original": False, "dusty": False})))
