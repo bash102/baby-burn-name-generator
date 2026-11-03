@@ -8,6 +8,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 BUCKET=baby-burn-photos
 RULE=expire-tmp
+# Single source: RETENTION_DAYS in app/photos.py (fallback 14 if uv is missing).
+RETENTION_DAYS="$(uv run --python 3.11 python -c 'from app.photos import RETENTION_DAYS; print(RETENTION_DAYS)' 2>/dev/null || echo 14)"
 W="npx --yes wrangler"
 
 echo "== 1/5 wrangler login (opens your browser; skipped if already logged in)"
@@ -26,11 +28,11 @@ DEV_URL="$($W r2 bucket dev-url get "$BUCKET" | grep -Eo 'https://pub-[A-Za-z0-9
 [ -n "$DEV_URL" ] || read -r -p "Could not detect the public URL. Paste it (https://pub-....r2.dev): " DEV_URL
 DEV_URL="${DEV_URL%/}"
 
-echo "== 4/5 lifecycle: delete tmp/ after 14 days (only rule; nothing on p/ or album/)"
+echo "== 4/5 lifecycle: delete tmp/ after $RETENTION_DAYS days (only rule; nothing on p/ or album/)"
 if $W r2 bucket lifecycle list "$BUCKET" | grep -q "$RULE"; then
   echo "rule $RULE exists"
 else
-  $W r2 bucket lifecycle add "$BUCKET" "$RULE" tmp/ --expire-days 14 -y
+  $W r2 bucket lifecycle add "$BUCKET" "$RULE" tmp/ --expire-days "$RETENTION_DAYS" -y
 fi
 
 ACCOUNT_ID="$($W whoami --json 2>/dev/null | python3 -c 'import json,sys; a=json.load(sys.stdin).get("accounts") or []; print(a[0]["id"] if len(a)==1 else "")' 2>/dev/null || true)"

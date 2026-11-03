@@ -15,7 +15,7 @@ from app.transform import get_provider
 log = logging.getLogger(__name__)
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 SAMPLE_TAGLINE = "Dusty since the womb"
-SAMPLE_BANNER = "Using public sample content — set CONTENT_DIR to the private content repo to edit"
+SAMPLE_BANNER = "Using public sample content. Set CONTENT_DIR to the private content repo to edit."
 OPTION_SLOTS = "abcd"
 
 

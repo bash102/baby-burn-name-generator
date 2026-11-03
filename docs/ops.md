@@ -10,35 +10,61 @@ R2 holds the "dusty baby" photos so guests can scan a QR and download them. Free
 4. Click the button that adds R2 (labelled **Purchase R2 Plan** or **Add R2 subscription**), add a payment method (a card is required even for the free tier), and confirm. You are not charged under the free limits.
 5. On your Mac, from the repo root, run `bash deploy/setup-r2.sh`. It needs Node (`npx`) and `uv` (`brew install node uv`).
    - A browser opens for `wrangler login`; click **Allow**.
-   - It creates the `baby-burn-photos` bucket, enables the public r2.dev URL (no directory listing), adds the single lifecycle rule (delete `tmp/` after 14 days; nothing on `p/` or `album/`), and prints the URL and your account ID.
+   - It creates the `baby-burn-photos` bucket, enables the public r2.dev URL (no directory listing), adds the single lifecycle rule (delete `tmp/` after the retention period; nothing on `p/` or `album/`), and prints the URL and your account ID.
 6. Create the API token (the one thing wrangler cannot do): dashboard › **R2 object storage** › **API** › **Manage API tokens** › **Create API token**.
    - Permissions: **Object Read & Write**.
    - Specify bucket: only `baby-burn-photos`.
    - Click **Create API Token** and copy the **Access Key ID** and **Secret Access Key** (shown once).
 7. Paste both into the script prompts. It writes `PHOTO_BUCKET`, `PHOTO_BASE_URL`, `S3_ENDPOINT_URL`, `S3_REGION=auto`, the keys and a generated `ALBUM_SECRET` into `.env`, then runs `tools/cloud_check.py`.
-8. Copy `.env` to the Pi after section 2 (the Pi must be set up first); see the end of section 2.
+8. Keep this `.env`; step 4 of section 2 copies its R2 lines to the Pi.
 
 Re-running `setup-r2.sh` is safe; it keeps an existing `ALBUM_SECRET`.
 
 ## 2. Pi provisioning
 
-Flash Raspberry Pi OS (bookworm). In Raspberry Pi Imager set the username to `pi` (the service and paths assume `/home/pi`). Clone the repo to `/home/pi/baby-burn-name-generator`, then:
+Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
 
-```
-cd ~/baby-burn-name-generator && bash deploy/setup-pi.sh
-```
+1. Flash with Raspberry Pi Imager: choose **Raspberry Pi OS Lite (64-bit)** (bookworm or newer; note the release Imager picks). In Imager's settings set hostname `babyburn`, username `pi` (the service and paths assume `/home/pi`), enable SSH, and optionally Wi-Fi.
+2. Until setup finishes, reach the Pi at `babyburn.local` (set in Imager) or its IP address.
+3. Clone the repo to `/home/pi/baby-burn-name-generator` on the Pi, then run:
+   ```
+   cd ~/baby-burn-name-generator && bash deploy/setup-pi.sh
+   ```
+   The script:
+   - installs packages, sets hostname `babyburn` and timezone America/New_York
+   - installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed)
+   - adds the QL-800 udev rule (`lsusb` should show `04f9:209b`)
+   - generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad)
+   - enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start)
+   - creates `.env` (mode 600) with a random 8-digit `ADMIN_PIN`, printed once; note it
+   - does not start the service. Re-runs restart it automatically, unless `content/` is missing.
+4. Add the R2 and provider settings. On your Mac, from the project folder, copy the `.env` you made in section 1 to a side file (do not overwrite the Pi's `.env`; it holds the generated `ADMIN_PIN`):
+   ```
+   scp .env pi@babyburn.local:~/r2.env
+   ```
+   On the Pi, append only the R2 lines to the Pi `.env`:
+   ```
+   cd ~/baby-burn-name-generator
+   grep -E '^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET)=' ~/r2.env > ~/r2.lines
+   sed -i '/^\(PHOTO_BUCKET\|PHOTO_BASE_URL\|S3_ENDPOINT_URL\|S3_REGION\|S3_ACCESS_KEY_ID\|S3_SECRET_ACCESS_KEY\|ALBUM_SECRET\)=/d' .env
+   cat ~/r2.lines >> .env && rm ~/r2.env ~/r2.lines
+   ```
+   Then edit the Pi `.env` (`nano .env`) for the rest:
+   - `TRANSFORM_PROVIDER`: `openai` or `gemini`
+   - the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`
+   - `PRINTER=usb://0x04f9:0x209b`
+   - leave `ADMIN_PIN` as generated
+   The kiosk refuses to start with a real `PHOTO_BUCKET` and the placeholder `PHOTO_BASE_URL` (`example.com`) or `ALBUM_SECRET` (`change-me` or under 16 characters).
+5. Copy the private content to the Pi (the Pi needs no GitHub access). Content lives in the PRIVATE repo `bash102/baby-burn-content` (branch `drafts-v1` until reviewed). On your Mac, inside the project folder (`content/` is gitignored):
+   ```
+   gh repo clone bash102/baby-burn-content content
+   git -C content checkout drafts-v1
+   rsync -a --delete --exclude .git content/ pi@babyburn.local:~/baby-burn-name-generator/content/
+   ```
+6. Validate on the Pi: `cd ~/baby-burn-name-generator && uv run --env-file .env python -m app.content content/`. Without `content/` the kiosk would serve the public sample content, so `setup-pi.sh` will not start the service until it exists.
+7. Start the service: `sudo systemctl start babyburn` (use `restart` after later edits).
 
-The script installs packages, sets hostname `babyburn` and timezone America/New_York, installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed), adds the QL-800 udev rule (`lsusb` should show `04f9:209b`), generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad), and enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start).
-
-1. Run `bash deploy/setup-pi.sh` (above). The first run creates `.env` (mode 600) with a random 8-digit `ADMIN_PIN` (printed once; note it) and does not start the service. Re-runs restart the service automatically, unless `content/` is missing.
-2. Edit `.env`: `TRANSFORM_PROVIDER` (`openai` or `gemini`), the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`, `ADMIN_PIN`, `PRINTER=usb://0x04f9:0x209b`. The kiosk refuses to start with a real `PHOTO_BUCKET` and the placeholder `PHOTO_BASE_URL` (`example.com`) or `ALBUM_SECRET` (`change-me` or under 16 characters). If you set up R2 in section 1, copy its values over now by copying the whole `.env` from your Mac:
-   `scp .env pi@babyburn.local:~/baby-burn-name-generator/.env` then `ssh pi@babyburn.local chmod 600 baby-burn-name-generator/.env`. Then set the items above in it (the copy replaces the generated `ADMIN_PIN`, so set a strong one); the Pi needs no other change.
-3. Copy the private content to the Pi (the Pi needs no GitHub access). On your Mac:
-   `rsync -a --delete <private content clone>/ pi@babyburn.local:~/baby-burn-name-generator/content/`
-   Then on the Pi check it loads: `cd ~/baby-burn-name-generator && uv run --env-file .env python -m app.content content/`. Without `content/` the kiosk would serve the public sample content, so `setup-pi.sh` will not start the service until it exists.
-4. Start the service: `sudo systemctl start babyburn` (use `restart` after later edits).
-
-After editing content by hand (on the Pi, or re-syncing from your Mac), run `uv run --env-file .env python -m app.content content/` before restarting; a broken file stops the kiosk from booting.
+After editing content by hand (on the Pi, or re-syncing from your Mac), run the validate command again before restarting; a broken file stops the kiosk from booting.
 
 Logs: `journalctl -u babyburn -f`.
 
@@ -52,11 +78,12 @@ Logs: `journalctl -u babyburn -f`.
 1. AirDrop/email `certs/rootCA.pem` to the iPad and open it (Settings › Profile Downloaded › Install).
 2. Settings › General › About › Certificate Trust Settings, then enable full trust for the mkcert root.
 3. Safari: open `https://babyburn.local`, Share › Add to Home Screen, launch from the icon.
-4. Lock it with Guided Access (Settings › Accessibility › Guided Access; triple-click the side button in the app).
+4. On first use tap **Allow** for the camera.
+5. Lock it with Guided Access (Settings › Accessibility › Guided Access; triple-click the side button in the app). Re-check the camera after starting Guided Access.
 
 ## 5. Printer
 
-Brother QL-800: turn **Editor Lite off** (the green light on the unit must be off, hold the button until it goes out). Load DK-1234 (60x86 mm) labels; keep a spare roll.
+Brother QL-800: turn **Editor Lite off** (the green light on the unit must be off, hold the button until it goes out). Load Brother DK-1234 (sold as DK-11234 in the US): 60 × 86 mm die-cut name badges; keep a spare roll.
 
 ## 6. Go-live checklist
 
@@ -64,13 +91,37 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 - [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `.env`.
 - [ ] Test print from the app; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
-- [ ] Bucket lifecycle rule on `tmp/` is 14 days (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
-- [ ] Album page is empty and no names are used up: run the freeze reset (section 6a) after the last rehearsal.
+- [ ] Bucket lifecycle rule on `tmp/` matches `RETENTION_DAYS` (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
 - [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
-- [ ] Cloud check from a phone on cellular: `uv run --env-file .env python tools/cloud_check.py` (it puts, copies and batch-deletes a test page with the kiosk's own client, as share and delete do), open the printed URL on the phone (page loads), then open the bucket root URL (no listing).
+- [ ] Cloud check, run on the Pi: `uv run --env-file .env python tools/cloud_check.py`. It puts, copies and batch-deletes a test page with the kiosk's own client, prints a URL, and waits for Enter. Open the URL on a phone on cellular (page loads), then open the bucket root URL (no listing), then press Enter.
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
+- [ ] Freeze (section 7): after the last rehearsal, reset names and album so the party starts clean.
 
-## 6a. Freeze (Fri 11-13)
+## Party night
+
+Admin: <https://babyburn.local/admin> (any username, the `ADMIN_PIN` from the Pi `.env` as password).
+
+The dashboard shows:
+- names left (a warning shows when low)
+- the album (shared photos)
+- cloud errors (uploads or deletes that failed)
+
+Common jobs:
+- Reprint a badge: open the guest's entry in admin and press **Reprint**.
+- Switch AI provider: use the provider control in admin (no restart needed).
+
+If something breaks:
+
+| Problem | What to do | What the guest sees |
+|---|---|---|
+| Badge jam or out of labels | Open the lid, clear or reseat the roll, press **Reprint** | "Badge jammed! Grab a volunteer." |
+| Printer unplugged | Plug it back in; press **Reprint** later | Their name on screen as usual; no badge yet |
+| Kiosk frozen | Pull to refresh, or close and reload the Home Screen app. If still stuck, on the Pi: `sudo systemctl restart babyburn` | Back to the start screen |
+| No internet | Nothing; badges still print | Photos fall back to the dust filter; the phone QR link fails |
+
+Logs: `journalctl -u babyburn -f` on the Pi.
+
+## 7. Freeze (Fri 11-13)
 
 After the last rehearsal, reset the event so the party starts clean: every name is available again, the shared album is empty and no rehearsal photos are left on the Pi. Run this ON THE PI, not your Mac: the album index (`data/album.sqlite3`) and the name database live there.
 
@@ -80,16 +131,16 @@ cd ~/baby-burn-name-generator && uv run --env-file .env python tools/reset_event
 sudo systemctl start babyburn
 ```
 
-`reset_event.py` deletes `data/names.sqlite3`, empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own after 14 days.
+`reset_event.py` deletes `data/names.sqlite3`, empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
 
-## 7. After the party
+## 8. After the party
 
 - Copy `data/album/` off the Pi (backup of shared photos).
-- Unshared photos vanish 14 days after upload (lifecycle on `tmp/`). Album photos stay until you delete the `album/` prefix in the R2 dashboard.
+- Unshared photos vanish about 14 days after upload (set by `RETENTION_DAYS` in `app/photos.py` and the R2 rule). Album photos stay until you delete the `album/` prefix in the R2 dashboard.
 
-## 8. Review content on your Mac
+## 9. Review content on your Mac
 
-Run the kiosk locally against your private content repo, so edits land there and not in the public sample content:
+Run the kiosk locally against your private content repo (`bash102/baby-burn-content`, cloned into `content/`), so edits land there and not in the public sample content:
 
 ```
 CONTENT_DIR=<path to private content clone> ADMIN_PIN=<pin> uv run --env-file .env python -m app.web --dev

@@ -185,7 +185,7 @@ def test_session_uploads_original_and_page(tmp_path, sample_content_dir):
     k.state.cloud.drain()
     page = k.s3.objects[f"p/{tok}"]
     assert page["ContentType"].startswith("text/html") and page["CacheControl"] == "no-cache"
-    assert "original.jpg" in page["Body"].decode() and "will be deleted on" in page["Body"].decode()
+    assert "original.jpg" in page["Body"].decode() and "will be deleted around" in page["Body"].decode()
     orig = k.s3.objects[f"tmp/{tok}/original.jpg"]
     assert orig["ContentType"] == "image/jpeg"
     assert orig["ContentDisposition"] == 'attachment; filename="baby-burn-original.jpg"'
@@ -212,7 +212,7 @@ def test_choice_album_moves_to_album_prefix(k):
     assert f"album/{SECRET}/{tok}/original.jpg" in k.keys()
     assert f"album/{SECRET}/{tok}/dusty.jpg" in k.keys()
     assert not [x for x in k.keys() if x.startswith(f"tmp/{tok}/")]
-    assert ALBUM_STATUS in k.page(tok) and "will be deleted on" not in k.page(tok)
+    assert ALBUM_STATUS in k.page(tok) and "will be deleted around" not in k.page(tok)
     assert html.escape(r["name"]) in k.album_page() and tok in k.album_page()
     assert f"<a href='{BASE}/album/{SECRET}/{tok}/original.jpg'><img src='{BASE}/album/{SECRET}/{tok}/dusty.jpg'" \
         in k.album_page()  # grid shows dusty, tap for original
@@ -260,7 +260,7 @@ def test_choice_done_keeps_tmp_and_countdown(k):
     k.drain()
     assert f"tmp/{tok}/original.jpg" in k.keys()
     page = k.page(tok)
-    assert "<script" in page and "This photo will be deleted on Sat Nov 28 (in 14 days, 0 hours)." in page
+    assert "<script" in page and "This photo will be deleted around Sat Nov 28 (in about 14 days)." in page
     assert (T0 + timedelta(days=14)).isoformat() in page
 
 
@@ -280,7 +280,7 @@ def test_upload_failure_does_not_block_finish(tmp_path, sample_content_dir):
 def test_photo_page_states():
     kw = dict(uploaded_at=T0, now=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
     temp = render_photo_page("tok", state="temp", has_dusty=True, **kw)
-    assert ("This photo will be deleted on Sat Nov 28 (in 14 days, 0 hours). Download it before then." in temp
+    assert ("This photo will be deleted around Sat Nov 28 (in about 14 days). Download it before then." in temp
             and "setInterval" in temp)
     assert "Download it before then." in temp.split("<script>")[1]  # live countdown uses the same copy
     assert "This photo has been deleted." in temp.split("<script>")[1]  # _GONE_JS
@@ -590,7 +590,7 @@ def test_finish_rejects_malformed_answers(k, body):
 def test_server_countdown_uses_now():
     kw = dict(state="temp", has_dusty=True, uploaded_at=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
     page = render_photo_page("tok", now=T0 + timedelta(days=3, hours=5, minutes=10), **kw)
-    assert "This photo will be deleted on Sat Nov 28 (in 10 days, 18 hours). Download it before then." in page
+    assert "This photo will be deleted around Sat Nov 28 (in about 11 days). Download it before then." in page
     soon = render_photo_page("tok", now=T0 + timedelta(days=14) - timedelta(minutes=30), **kw)
     assert "<p id=status class=status>This photo is about to be deleted. Download it now if you want it.</p>" in soon
 
@@ -698,3 +698,15 @@ def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir,
         socket.setdefaulttimeout(old)
         if idle:
             idle.close()
+
+
+def test_quiz_payload_has_retention_days(tmp_path, sample_content_dir):
+    from app.photos import RETENTION_DAYS
+    k = Kiosk(tmp_path, sample_content_dir)
+    assert k.c.get("/api/quiz").get_json()["retention_days"] == RETENTION_DAYS == 14
+
+
+def test_setup_r2_parses():
+    import pathlib, subprocess
+    root = pathlib.Path(__file__).resolve().parent.parent
+    subprocess.run(["bash", "-n", str(root / "deploy/setup-r2.sh")], check=True)
