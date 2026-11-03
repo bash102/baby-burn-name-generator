@@ -1,0 +1,20 @@
+- {id: lil-gnomesayer, name: "Lil' Gnomesayer", tags: [gnome], status: approved, needs_owner: false, note: ""}
+- {id: sir-pointy-hat, name: "Sir Pointy Hat", tags: [gnome], status: approved, needs_owner: false, note: ""}
+- {id: gnome-sweet-gnome, name: "Gnome Sweet Gnome", tags: [gnome], status: approved, needs_owner: false, note: ""}
+- {id: toadstool-tot, name: "Toadstool Tot", tags: [gnome, beast], status: approved, needs_owner: false, note: ""}
+- {id: dusty-bottom, name: "Dusty Bottom", tags: [dust], status: approved, needs_owner: false, note: ""}
+- {id: playa-puff, name: "Playa Puff", tags: [dust], status: approved, needs_owner: false, note: ""}
+- {id: goggle-eyes, name: "Goggle Eyes", tags: [dust], status: approved, needs_owner: false, note: ""}
+- {id: whiteout-wiggles, name: "Whiteout Wiggles", tags: [dust], status: approved, needs_owner: false, note: ""}
+- {id: glitter-bomb, name: "Glitter Bomb", tags: [sparkle], status: approved, needs_owner: false, note: ""}
+- {id: sparkle-pants, name: "Sparkle Pants", tags: [sparkle], status: approved, needs_owner: false, note: ""}
+- {id: disco-dumpling, name: "Disco Dumpling", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
+- {id: blinky-baby, name: "Blinky Baby", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
+- {id: fuzzy-yeti, name: "Fuzzy Yeti", tags: [beast], status: approved, needs_owner: false, note: ""}
+- {id: moop-monster, name: "Moop Monster", tags: [beast], status: approved, needs_owner: false, note: ""}
+- {id: captain-crumbs, name: "Captain Crumbs", tags: [beast], status: approved, needs_owner: false, note: ""}
+- {id: sleepy-sasquatch, name: "Sleepy Sasquatch", tags: [beast, night], status: approved, needs_owner: false, note: ""}
+- {id: midnight-muffin, name: "Midnight Muffin", tags: [night], status: approved, needs_owner: false, note: ""}
+- {id: moonbeam-munchkin, name: "Moonbeam Munchkin", tags: [night], status: approved, needs_owner: false, note: ""}
+- {id: dawn-patrol-pip, name: "Dawn Patrol Pip", tags: [night], status: approved, needs_owner: false, note: ""}
+- {id: tiny-temple-keeper, name: "Tiny Temple Keeper", tags: [night, gnome], status: approved, needs_owner: false, note: ""}
