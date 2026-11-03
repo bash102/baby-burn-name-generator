@@ -1,0 +1,17 @@
+[Unit]
+Description=Baby Burn name generator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/baby-burn-name-generator
+EnvironmentFile=/home/pi/baby-burn-name-generator/.env
+# uv run uses the checkout's .venv (created by `uv sync`); the app is never pip-installed.
+ExecStart=/home/pi/.local/bin/uv run --python 3.11 python -m app.web
+Restart=always
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
