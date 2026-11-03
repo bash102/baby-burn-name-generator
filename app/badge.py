@@ -14,7 +14,7 @@ W, H = 954, 672
 DPI = 300
 FRAME_PX = 30  # border art lives in this outer band
 MARGIN_PX = 50
-NAME_MAX_PT, NAME_MIN_PT, NAME_MAX_LINES = 60, 12, 2
+NAME_MAX_PT, NAME_MIN_PT, NAME_MAX_LINES = 60, 8, 2  # 8 pt is the hard floor: shrink, never clip
 # Full width, sits above the QR corner so the two can never overlap.
 NAME_BOX = (MARGIN_PX, MARGIN_PX, W - MARGIN_PX, 335)
 
@@ -43,9 +43,27 @@ def line_height(font: ImageFont.FreeTypeFont) -> int:
     return ascent + descent
 
 
+def _chunks(word: str, font, width: int) -> list[str]:
+    """Split a token wider than `width` into character runs that each fit."""
+    out, cur = [], ""
+    for ch in word:
+        if cur and font.getlength(cur + ch) > width:
+            out.append(cur)
+            cur = ch
+        else:
+            cur += ch
+    return out + [cur]
+
+
 def _wrap(text: str, font, width: int) -> list[str]:
     lines, cur = [], ""
     for word in text.split():
+        if font.getlength(word) > width:  # unbreakable: split by characters
+            if cur:
+                lines.append(cur)
+            *whole, cur = _chunks(word, font, width)
+            lines += whole
+            continue
         trial = f"{cur} {word}".strip()
         if cur and font.getlength(trial) > width:
             lines.append(cur)
@@ -62,8 +80,7 @@ def _fit(text, path, lo, hi, box, max_lines):
     def lines_if_fits(pt):
         font = _font(path, pt)
         lines = _wrap(text, font, bw)
-        ok = (len(lines) <= max_lines and len(lines) * line_height(font) <= bh
-              and all(font.getlength(x) <= bw for x in lines))
+        ok = len(lines) <= max_lines and len(lines) * line_height(font) <= bh
         return lines if ok else None
 
     best = (lo, _wrap(text, _font(path, lo), bw))
@@ -149,16 +166,21 @@ def render_badge(name: str, tagline: str, first_burn: int | None, qr_url: str | 
     d = ImageDraw.Draw(img)
     _DRAW[border](d, rng)
 
-    pt, lines = fit_name(name)
-    _centered_lines(d, lines, name_font(pt), NAME_BOX)
-
     # tagline + first-burn live left of the QR (full width without one)
     right = QR_BOX[0] - 20 if qr_url else W - MARGIN_PX
-    top = NAME_BOX[3] + 15
-    bottom = H - MARGIN_PX - (24 if first_burn is not None else 0)
-    tag_box = (MARGIN_PX, top, right, bottom)
-    tpt, tlines = _fit(tagline, TEXT_FONT, 10, 20, tag_box, 3)
-    _centered_lines(d, tlines, _font(TEXT_FONT, tpt), tag_box)
+    gap = 15
+    tag_box = (MARGIN_PX, NAME_BOX[3] + gap, right, H - MARGIN_PX - (24 if first_burn is not None else 0))
+    pt, lines = fit_name(name)
+    tpt, tlines = _fit(tagline, TEXT_FONT, 8, 20, tag_box, 3)
+    nfont, tfont = name_font(pt), _font(TEXT_FONT, tpt)
+    nh, th = line_height(nfont) * len(lines), line_height(tfont) * len(tlines)
+
+    # centre name+tagline vertically above the first-burn line; with a QR the name stops above it
+    group = nh + (gap + th if tlines else 0)
+    y = MARGIN_PX + (tag_box[3] - MARGIN_PX - group) / 2
+    y = max(MARGIN_PX, min(y, QR_BOX[1] - nh) if qr_url else y)
+    _centered_lines(d, lines, nfont, NAME_BOX, y)
+    _centered_lines(d, tlines, tfont, tag_box, y + nh + gap)
     if first_burn is not None:
         d.text(((MARGIN_PX + right) / 2, H - MARGIN_PX), f"First Burn: Baby Burn {first_burn}",
                font=_font(TEXT_FONT, 12), fill=0, anchor="ms")
