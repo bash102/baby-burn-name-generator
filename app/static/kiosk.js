@@ -21,7 +21,6 @@ const COPY = {
   developing: "Developing your dusty baby...",
   takeHome: "Take it home",
   skip: "Skip",
-  qrTitle: "Take it home",
   qrScan: "Scan to get your dusty baby photo (deletes in 14 days)",
   album: "Share to the Baby Burn album (keeps it)",
   delete: "Delete my photo",
@@ -41,14 +40,18 @@ const STUB_MODE = new URLSearchParams(location.search).get("stub");
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Retries 3x (0.5/1/2 s) on network errors or 5xx; returns the last response, or throws the last error.
+// Which calls retry: GETs (idempotent) and POST /finish and /photo-choice (the server dedupes per session).
+// POST /api/session never retries: there is no session id yet, so a retry after a lost response could
+// create a duplicate session and a second paid AI transform. The caller shows the error screen instead.
 const once = (path, opts) => STUB ? stubApi(path, opts) : fetch(path, opts);
 async function api(path, opts = {}) {
+  const retries = path === "/api/session" ? 0 : 3;
   for (let i = 0; ; i++) {
     let res;
     try {
       res = await once(path, opts);
-      if (res.status < 500 || i >= 3) return res;
-    } catch (e) { if (i >= 3) throw e; }
+      if (res.status < 500 || i >= retries) return res;
+    } catch (e) { if (i >= retries) throw e; }
     await sleep(500 * 2 ** i);
   }
 }
@@ -136,7 +139,8 @@ async function createSession(blob) {
   S.id = j.session_id; S.hasPhoto = j.has_photo;
 }
 function fail() { stopCamera(); show(h("h2", {}, COPY.error), btn("OK", toStart, "big")); }
-async function skipPhoto() {
+async function skipPhoto(ev) {
+  if (ev && ev.currentTarget) ev.currentTarget.disabled = true;   // one tap only: a second would make a second session
   stopCamera(); const e = epoch;
   try { await createSession(null); } catch { return e === epoch ? fail() : null; }
   if (e === epoch) quizScreen();
@@ -235,7 +239,7 @@ async function finish() {
     S.hasPhoto ? photo : null),
     h("div", { class: "row" },
       S.hasPhoto ? btn(COPY.takeHome, takeHomeScreen, "big") : null,
-      btn(S.hasPhoto ? COPY.skip : COPY.done, toStart, "skip")));
+      btn(S.hasPhoto ? COPY.skip : COPY.done, () => { if (S.hasPhoto) choose("done"); toStart(); }, "skip")));
   if (S.hasPhoto) {
     longIdle();
     const e2 = epoch;
@@ -283,10 +287,11 @@ function takeHomeScreen() {
   S.onTakeHome = true;
   const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
   const btns = [btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")];
-  const qr = h("img", { class: "qr", alt: "QR code" });
-  api(`/api/session/${S.id}/qr.svg`).then(r => r.blob()).then(b => { qr.src = objUrl(b); }).catch(() => {});
-  show(h("h2", {}, COPY.qrTitle), qr,
-    h("p", {}, COPY.qrScan),
+  const qr = h("img", { class: "qr", alt: "QR code" }), qrScan = h("p", {}, COPY.qrScan);
+  const noQr = () => { qr.style.display = qrScan.style.display = "none"; };   // keep the buttons; just drop the QR area
+  api(`/api/session/${S.id}/qr.svg`).then(r => { if (!r.ok) throw 0; return r.blob(); }).then(b => { qr.src = objUrl(b); }).catch(noQr);
+  show(h("h2", {}, COPY.takeHome), qr,
+    qrScan,
     h("div", { class: "row" }, ...btns));
   longIdle();
 }

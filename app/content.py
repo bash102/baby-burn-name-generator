@@ -5,17 +5,20 @@ import re
 import stat
 import sys
 import tempfile
+import threading
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import yaml
 
 Kind = Literal["names", "questions", "taglines"]
-KINDS: tuple[str, ...] = ("names", "questions", "taglines")
+KINDS: tuple[str, ...] = get_args(Kind)
 STATUSES = frozenset({"draft", "approved", "rejected"})
 QUESTION_TYPES = frozenset({"single", "multi"})
+# Max characters per field so badge and kiosk text always fit.
+MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 45, 60
 
 # Safety net only (drug and political terms, whole words, case-insensitive). The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
@@ -25,6 +28,7 @@ BANNED_WORDS: frozenset[str] = frozenset({
     "gop", "maga", "liberal", "liberals", "conservative", "conservatives", "election",
 })
 
+_LOCK = threading.Lock()  # serializes read-modify-write in set_status/append_entry (web threads)
 RESERVED_NAME_PREFIX = "stranger-"  # fallback ids minted by app.names
 _ALLOWED_EXTRA = "’“”–—"
 _WORD = re.compile(r"[a-z0-9]+")
@@ -77,6 +81,7 @@ class Content:
     names: list[Name]
     questions: list[Question]
     taglines: list[Tagline]
+    warnings: list[str] = field(default_factory=list)  # non-blocking findings for the owner
 
     @property
     def approved_names(self) -> list[Name]:
@@ -87,8 +92,10 @@ class Content:
         return [q for q in self.questions if q.status == "approved" and not q.fixed]
 
     @property
-    def first_burn_question(self) -> Question:
-        return next(q for q in self.questions if q.fixed == "first_burn")
+    def first_burn_question(self) -> Question | None:
+        """The fixed first-burn question, or None while it is not approved."""
+        q = next(q for q in self.questions if q.fixed == "first_burn")
+        return q if q.status == "approved" else None
 
     @property
     def approved_taglines(self) -> list[Tagline]:
@@ -103,10 +110,12 @@ def _renderable(ch: str) -> bool:
     return 0x20 <= ord(ch) <= 0x7E or 0xA0 <= ord(ch) <= 0xFF or ch in _ALLOWED_EXTRA
 
 
-def _check_text(where: str, text: Any, approved: bool, errs: list[str]) -> None:
+def _check_text(where: str, text: Any, approved: bool, errs: list[str], max_len: int) -> None:
     if not isinstance(text, str) or not text.strip():
         errs.append(f"{where}: text must be a non-empty string")
         return
+    if len(text) > max_len:
+        errs.append(f"{where}: at most {max_len} characters, got {len(text)}")
     bad = sorted({c for c in text if not _renderable(c)})
     if bad:
         errs.append(f"{where}: unrenderable characters {bad!r} in {text!r}")
@@ -152,20 +161,21 @@ def _tags(where: str, r: dict, errs: list[str]) -> frozenset[str]:
 
 def _build(raw: dict[str, Any]) -> Content:
     errs: list[str] = []
+    warnings: list[str] = []
 
     names, seen, texts = [], set(), set()
     for r in _dicts("names", raw["names"], errs):
         where, status, ok = _common("names", r, seen, errs)
         if str(r.get("id")).startswith(RESERVED_NAME_PREFIX):
             errs.append(f"{where}: id may not start with {RESERVED_NAME_PREFIX!r} (reserved for fallback names)")
-        _check_text(where, r.get("name"), ok, errs)
+        _check_text(where, r.get("name"), ok, errs, MAX_NAME)
         key = str(r.get("name")).casefold()
         if key in texts:
             errs.append(f"{where}: duplicate name {r.get('name')!r}")
         texts.add(key)
         note = r.get("note") or ""
         if note:
-            _check_text(where + ".note", note, ok, errs)
+            _check_text(where + ".note", note, ok, errs, 500)
         names.append(Name(str(r.get("id")), str(r.get("name")), _tags(where, r, errs), status,
                           bool(r.get("needs_owner", False)), note))
     vocab = frozenset(t for n in names if n.status == "approved" for t in n.tags)
@@ -173,7 +183,7 @@ def _build(raw: dict[str, Any]) -> Content:
     taglines, seen = [], set()
     for r in _dicts("taglines", raw["taglines"], errs):
         where, status, ok = _common("taglines", r, seen, errs)
-        _check_text(where, r.get("text"), ok, errs)
+        _check_text(where, r.get("text"), ok, errs, MAX_TAGLINE)
         taglines.append(Tagline(str(r.get("id")), str(r.get("text")), status))
 
     questions, seen = [], set()
@@ -184,10 +194,10 @@ def _build(raw: dict[str, Any]) -> Content:
         fixed = r.get("fixed")
         if fixed not in (None, "first_burn"):
             errs.append(f"{where}: fixed must be 'first_burn' or absent")
-        _check_text(where + ".prompt", r.get("prompt"), ok, errs)
+        _check_text(where + ".prompt", r.get("prompt"), ok, errs, 200)
         quip = r.get("quip") or ""
         if quip:
-            _check_text(where + ".quip", quip, ok, errs)
+            _check_text(where + ".quip", quip, ok, errs, MAX_QUIP)
         opts, oseen = [], set()
         rows = _dicts(where + ".options", r.get("options"), errs)
         if len(rows) < 2:
@@ -197,16 +207,16 @@ def _build(raw: dict[str, Any]) -> Content:
             if o.get("id") in oseen:
                 errs.append(f"{ow}: duplicate option id")
             oseen.add(o.get("id"))
-            _check_text(ow, o.get("text"), ok, errs)
+            _check_text(ow, o.get("text"), ok, errs, MAX_OPTION)
             otags = _tags(ow, o, errs)
             if ok and (unknown := otags - vocab):
-                errs.append(f"{ow}: tags {sorted(unknown)} are not on any approved name")
+                warnings.append(f"{ow}: tags {sorted(unknown)} are not on any approved name")
             fb = o.get("first_burn")
-            if fb is not None and not isinstance(fb, int):
+            if fb is not None and (not isinstance(fb, int) or isinstance(fb, bool)):
                 errs.append(f"{ow}: first_burn must be an integer")
                 fb = None
             opts.append(Option(str(o.get("id")), str(o.get("text")), bool(o.get("correct", False)), otags, fb))
-        # ponytail: a question with no correct option is allowed only as a pure preference question
+        # ceiling: a question with no correct option is allowed only as a pure preference question
         # (every option tagged), which the sample content relies on.
         if not fixed and opts and not any(o.correct for o in opts) and not all(o.tags for o in opts):
             errs.append(f"{where}: needs a correct option (or tag every option for a preference question)")
@@ -217,7 +227,7 @@ def _build(raw: dict[str, Any]) -> Content:
 
     if errs:
         raise ContentError("\n".join(errs))
-    return Content(names, questions, taglines)
+    return Content(names, questions, taglines, warnings)
 
 
 def _read_raw(dir: Path) -> dict[str, Any]:
@@ -262,19 +272,21 @@ def _check_kind(kind: str) -> None:
 
 def set_status(dir: Path, kind: Kind, id: str, status: str) -> None:
     _check_kind(kind)
-    raw = _read_raw(dir)
-    entry = next((r for r in raw[kind] if isinstance(r, dict) and r.get("id") == id), None)
-    if entry is None:
-        raise ContentError(f"{kind}[{id}]: no such entry")
-    entry["status"] = status  # _commit rejects an invalid status
-    _commit(dir, kind, raw)
+    with _LOCK:
+        raw = _read_raw(dir)
+        entry = next((r for r in raw[kind] if isinstance(r, dict) and r.get("id") == id), None)
+        if entry is None:
+            raise ContentError(f"{kind}[{id}]: no such entry")
+        entry["status"] = status  # _commit rejects an invalid status
+        _commit(dir, kind, raw)
 
 
 def append_entry(dir: Path, kind: Kind, entry: dict) -> None:
     _check_kind(kind)
-    raw = _read_raw(dir)
-    raw[kind].append(dict(entry))
-    _commit(dir, kind, raw)
+    with _LOCK:
+        raw = _read_raw(dir)
+        raw[kind].append(dict(entry))
+        _commit(dir, kind, raw)
 
 
 def _summary(c: Content) -> str:
@@ -292,7 +304,10 @@ def main(argv: list[str]) -> int:
         print("usage: python -m app.content <content-dir>", file=sys.stderr)
         return 2
     try:
-        print(_summary(load_content(Path(argv[1]))))
+        c = load_content(Path(argv[1]))
+        print(_summary(c))
+        for w in c.warnings:
+            print(f"warning: {w}", file=sys.stderr)
     except ContentError as e:
         print(e, file=sys.stderr)
         return 1

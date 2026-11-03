@@ -17,7 +17,9 @@ from app.config import Config
 # OpenAI: token-priced, $30/1M image-output tokens (~1.3k tokens for a medium 1024px image)
 #   plus input; estimate only. https://developers.openai.com/api/docs/pricing
 # Gemini gemini-3.1-flash-image, 1K: $0.067. https://aistudio.google.com/docs/pricing
-COST_PER_IMAGE_USD = {"openai": 0.05, "gemini": 0.067, "fake": 0.0}
+# Keyed by image model id (the app/config.py defaults); a model not listed shows $0.000.
+_D = Config()
+COST_PER_IMAGE_USD = {_D.openai_image_model: 0.05, _D.gemini_image_model: 0.067, "fake": 0.0}
 
 
 def main() -> None:
@@ -62,7 +64,8 @@ def main() -> None:
         rows.append("<tr>" + "".join(cells) + "</tr>")
 
     head = "".join(
-        f"<th>{html.escape(n)}<br>~${COST_PER_IMAGE_USD.get(n, 0):.3f}/image</th>" for n in providers
+        f"<th>{html.escape(n)}<br>~${COST_PER_IMAGE_USD.get(getattr(cfg, f'{n}_image_model', n), 0):.3f}/image</th>"
+        for n in providers
     )
     (args.out_dir / "index.html").write_text(
         "<!doctype html><meta charset=utf-8><title>Bake-off</title>"
