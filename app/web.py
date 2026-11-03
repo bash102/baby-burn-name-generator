@@ -18,11 +18,12 @@ from app.config import ROOT, Config
 from app.content import Content, ContentError, load_content
 from app.names import NameStore
 from app.photos import AlbumIndex, CloudPhotos, MemoryS3, PhotoStore, make_s3_client
-from app.printer import PrintError, make_printer
+from app.printer import make_printer
 from app.sessions import Session, SessionStore
 from app.transform import Provider, get_provider
 
 log = logging.getLogger(__name__)
+CLOUD_DELETE_WAIT_S = 10
 CHOICES = {"album", "delete", "done"}
 DEV_CLOUD = "/cloud"  # dev-only route serving the in-memory bucket when PHOTO_BUCKET is unset
 
@@ -53,6 +54,11 @@ class AppState:
         self.content, self.content_error = content, None
 
 
+def _served(c: Content):
+    """(first-burn question or None, random pool): exactly the approved questions the quiz can serve."""
+    return c.first_burn_question, c.approved_questions
+
+
 def _expired():
     return jsonify(error="expired"), 404
 
@@ -81,9 +87,12 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         cloud.upload(s.token, original=s.photo)
 
     def on_dusty(s: Session, jpeg: bytes) -> None:
-        photos.save_dusty(s.token, jpeg)
-        if s.choice == "album":
-            photos.copy_to_album_backup(s.token, s.name_id)
+        try:  # a local-disk hiccup must not fail the guest's transform
+            photos.save_dusty(s.token, jpeg)
+            if s.choice == "album":
+                photos.copy_to_album_backup(s.token, s.name_id)
+        except Exception:
+            log.exception("local dusty save failed")
         cloud.upload(s.token, dusty=jpeg)
 
     sessions = SessionStore(ThreadPoolExecutor(8, "transform"), cfg.session_ttl_s, now,
@@ -109,8 +118,8 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
     @app.get("/api/quiz")
     def quiz():
         c = st.content
-        pool = c.approved_questions
-        qs = [c.first_burn_question] + st.rng.sample(pool, min(cfg.quiz_random_count, len(pool)))
+        fb, pool = _served(c)
+        qs = ([fb] if fb else []) + st.rng.sample(pool, min(cfg.quiz_random_count, len(pool)))
         return jsonify(questions=[{
             "id": q.id, "type": q.type, "prompt": q.prompt, "quip": q.quip,
             "options": [{"id": o.id, "text": o.text, "correct": o.correct, "first_burn": o.first_burn}
@@ -170,8 +179,13 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
             cloud.share(s.token, s.result["name"])
             photos.copy_to_album_backup(s.token, s.name_id)
         elif s.token and choice == "delete":
-            cloud.delete(s.token)
+            fut = cloud.delete(s.token)
             photos.delete(s.token)
+            try:  # privacy: only say ok once the cloud copy is really gone
+                fut.result(timeout=CLOUD_DELETE_WAIT_S)
+            except Exception:
+                log.warning("cloud delete not confirmed for %s", s.token[:6] + "…")
+                return jsonify(ok=False), 502
         return jsonify(ok=True)
 
     if dev_bucket:
@@ -191,7 +205,8 @@ def _finish(st: AppState, s: Session, answers) -> dict:
         if isinstance(a, dict) and isinstance(a.get("option_ids"), list):
             chosen[a.get("question_id")] = set(map(str, a["option_ids"]))
     tags, first_burn = set(), None
-    for q in st.content.questions:
+    fb, pool = _served(st.content)
+    for q in ([fb] if fb else []) + pool:
         for o in q.options:
             if o.id in chosen.get(q.id, ()):
                 tags |= o.tags
@@ -209,7 +224,7 @@ def _finish(st: AppState, s: Session, answers) -> dict:
     try:
         st.printer(img)
         printed = True
-    except PrintError:
+    except Exception:  # any printer fault (USB, OSError) must not lose the name
         log.exception("print failed for %s", display)
         printed = False
     st.recent_badges.append((name_id, display, tagline, first_burn))

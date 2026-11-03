@@ -1,9 +1,12 @@
 """In-memory guest sessions: one per kiosk run, with the photo's background transform and tagging."""
+import logging
 import secrets
 import threading
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import Callable, Collection
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(eq=False)
@@ -45,7 +48,10 @@ class SessionStore:
             def transform():
                 jpeg = provider.transform(photo)
                 if self.on_dusty:
-                    self.on_dusty(s, jpeg)
+                    try:
+                        self.on_dusty(s, jpeg)
+                    except Exception:
+                        log.exception("on_dusty hook failed")
                 return jpeg
 
             s.transform_future = self.executor.submit(transform)
