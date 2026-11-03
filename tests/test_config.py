@@ -1,4 +1,11 @@
+import pytest
+
 from app.config import Config
+
+
+def test_bad_numeric_names_variable():
+    with pytest.raises(ValueError, match="QUIZ_RANDOM_COUNT"):
+        Config.from_env({"QUIZ_RANDOM_COUNT": ""})
 
 
 def test_content_dir_falls_back_to_sample():

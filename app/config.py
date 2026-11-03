@@ -1,7 +1,7 @@
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, get_type_hints
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,19 +35,23 @@ class Config:
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
         kw = {}
-        for f in fields(cls):
-            raw = env.get(f.name.upper())
-            if raw is None or f.name == "content_dir":
+        hints = get_type_hints(cls)  # resolves string annotations too
+        for name, typ in hints.items():
+            raw = env.get(name.upper())
+            if raw is None or name == "content_dir":
                 continue
-            if f.name == "s3_endpoint_url":
-                kw[f.name] = raw or None
-            elif f.name == "data_dir":
-                kw[f.name] = Path(raw)
-            elif f.type in (float, int):
-                kw[f.name] = f.type(raw)
+            if name == "s3_endpoint_url":
+                kw[name] = raw or None
+            elif name == "data_dir":
+                kw[name] = Path(raw)
+            elif typ in (float, int):
+                try:
+                    kw[name] = typ(raw)
+                except ValueError:
+                    raise ValueError(f"{name.upper()} must be a number, got {raw!r}") from None
             else:
-                kw[f.name] = raw
-        content = Path(env.get("CONTENT_DIR", ""))
-        if env.get("CONTENT_DIR") and content.is_dir():
-            kw["content_dir"] = content
+                kw[name] = raw
+        content = env.get("CONTENT_DIR")
+        if content and Path(content).is_dir():
+            kw["content_dir"] = Path(content)
         return cls(**kw)
