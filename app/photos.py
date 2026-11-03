@@ -137,7 +137,8 @@ const when = EXP.toLocaleDateString(undefined, {weekday: "short", month: "short"
 function tick() {
   const ms = EXP - Date.now(), el = document.getElementById("status");
   el.textContent = ms >= 36e5
-    ? "This photo will be deleted around " + when + " (in about " + plural(Math.max(1, Math.round(ms / 864e5)), "day")
+    ? "This photo will be deleted around " + when + " (in about "
+      + (ms >= 1728e5 ? plural(Math.floor(ms / 864e5), "day") : plural(Math.floor(ms / 36e5), "hour"))
       + "). Download it before then."
     : "This photo is about to be deleted. Download it now if you want it.";
 }
@@ -163,9 +164,9 @@ def _countdown(exp: datetime, now: datetime) -> str:
     left = exp - now
     if left < timedelta(hours=1):
         return "This photo is about to be deleted. Download it now if you want it."
-    days = max(1, round(left.total_seconds() / 86400))
-    return (f"This photo will be deleted around {_short_date(exp)} (in about {_plural(days, 'day')}). "
-            "Download it before then.")
+    hours = int(left.total_seconds() // 3600)  # floor, same as the page script
+    span = _plural(hours // 24, "day") if hours >= 48 else _plural(hours, "hour")
+    return f"This photo will be deleted around {_short_date(exp)} (in about {span}). Download it before then."
 
 
 def render_photo_page(token: str, *, state: Literal["temp", "album", "deleted"], has_dusty: bool,

@@ -278,7 +278,7 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,
-            "printed": printed, "photo_url": photo_url}
+            "printed": printed, "photo_url": photo_url, "retention_days": RETENTION_DAYS}
 
 
 def _expire_loop(sessions: SessionStore) -> None:

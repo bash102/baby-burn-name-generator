@@ -16,7 +16,7 @@
 - Guest flow under 30 s; guest input is tap-only (no keyboard).
 - A name is given out at most once, ever; enforced by SQLite `PRIMARY KEY`, survives reboot.
 - Kiosk serves only `status: approved` entries. Statuses: `draft | approved | rejected`. `needs_owner: true` marks sex/body humor.
-- No drugs, no partisan politics (gerrymandering and election-process jokes are in; no real politicians, named parties, or culture-war topics; owner decision 2026-11-03), nothing deeply personal, no real people's names in any content (private included).
+- No drug content, non-partisan politics only (gerrymandering and election-process jokes are in; no real politicians, named parties, or culture-war topics; owner decision 2026-11-03), nothing deeply personal, no real people's names in any content (private included).
 - Public repo `baby-burn-name-generator` contains **no** real content, guest names, planning-sheet data, photos, or keys. `content/`, `data/`, `.env`, `certs/` are gitignored.
 - App reads `CONTENT_DIR` if it exists, else `content.sample/`. Admin writes only to `CONTENT_DIR`.
 - Label: DK-1234 die-cut, brother_ql identifier `60x86`, printable 672 × 954 dots. Badge rendered landscape 954 × 672, mode `"1"`, sent rotated 90°.

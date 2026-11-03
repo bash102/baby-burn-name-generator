@@ -6,7 +6,7 @@ badge, plus an AI "dusty baby" photo hosted on Cloudflare R2.
 
 ## Start here
 
-1. [docs/ops.md](docs/ops.md): setup (Cloudflare, Pi, iPad, printer) and the party-night guide
+1. [docs/ops.md](docs/ops.md) covers setup (Cloudflare, Pi, iPad, printer) and party night.
 2. [docs/STATUS.md](docs/STATUS.md): what is done and what is next
 
 ## Run locally

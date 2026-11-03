@@ -590,7 +590,7 @@ def test_finish_rejects_malformed_answers(k, body):
 def test_server_countdown_uses_now():
     kw = dict(state="temp", has_dusty=True, uploaded_at=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
     page = render_photo_page("tok", now=T0 + timedelta(days=3, hours=5, minutes=10), **kw)
-    assert "This photo will be deleted around Sat Nov 28 (in about 11 days). Download it before then." in page
+    assert "This photo will be deleted around Sat Nov 28 (in about 10 days). Download it before then." in page
     soon = render_photo_page("tok", now=T0 + timedelta(days=14) - timedelta(minutes=30), **kw)
     assert "<p id=status class=status>This photo is about to be deleted. Download it now if you want it.</p>" in soon
 
@@ -703,10 +703,34 @@ def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir,
 def test_quiz_payload_has_retention_days(tmp_path, sample_content_dir):
     from app.photos import RETENTION_DAYS
     k = Kiosk(tmp_path, sample_content_dir)
-    assert k.c.get("/api/quiz").get_json()["retention_days"] == RETENTION_DAYS == 14
+    assert k.c.get("/api/quiz").get_json()["retention_days"] == RETENTION_DAYS
 
 
 def test_setup_r2_parses():
     import pathlib, subprocess
     root = pathlib.Path(__file__).resolve().parent.parent
     subprocess.run(["bash", "-n", str(root / "deploy/setup-r2.sh")], check=True)
+
+
+@pytest.mark.parametrize("left, text", [
+    (timedelta(hours=2), "(in about 2 hours)"),
+    (timedelta(hours=36), "(in about 36 hours)"),
+    (timedelta(hours=60), "(in about 2 days)"),
+    (timedelta(hours=1, minutes=40), "(in about 1 hour)"),
+])
+def test_server_countdown_floors(left, text):
+    from app.photos import RETENTION_DAYS
+    kw = dict(state="temp", has_dusty=True, uploaded_at=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
+    page = render_photo_page("tok", now=T0 + timedelta(days=RETENTION_DAYS) - left, **kw)
+    assert text in page and "Download it before then." in page
+
+
+def test_js_countdown_floors_like_server():
+    script = render_photo_page("tok", state="temp", has_dusty=True, uploaded_at=T0,
+                               album_url=f"{BASE}/album/{SECRET}/index.html", now=T0).split("<script>")[1]
+    assert "Math.floor(ms / 864e5)" in script and "Math.floor(ms / 36e5)" in script and "Math.round" not in script
+
+
+def test_finish_payload_has_retention_days(k):
+    from app.photos import RETENTION_DAYS
+    assert k.finish(k.session())["retention_days"] == RETENTION_DAYS

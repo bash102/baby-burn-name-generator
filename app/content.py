@@ -20,7 +20,7 @@ QUESTION_TYPES = frozenset({"single", "multi"})
 # Max characters per field so badge and kiosk text always fit.
 MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 45, 60
 
-# Safety net only (drug terms, real politicians, and party names, whole words, case-insensitive). The owner's review is the real gate.
+# Safety net only: drug terms, real politicians, party names. The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
     "cocaine", "heroin", "meth", "methamphetamine", "lsd", "mdma", "ketamine",
     "marijuana", "cannabis", "shrooms", "psilocybin", "opium", "fentanyl", "dmt", "ayahuasca",

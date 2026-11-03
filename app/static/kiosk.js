@@ -21,7 +21,7 @@ const COPY = {
   developing: "Developing your dusty baby...",
   takeHome: "Take it home",
   skip: "Skip",
-  qrScan: days => `Scan to get your dusty baby photo (deletes in about ${days} days)`,
+  qrScan: days => `Scan to get your dusty baby photo (deletes ${days ? `in about ${days} days` : "after about two weeks"})`,
   album: "Share to the Baby Burn album (keeps it)",
   delete: "Delete my photo",
   done: "Done",
@@ -239,6 +239,7 @@ async function finish() {
     r = await res.json();
   } catch { return e === epoch ? fail() : null; }
   if (e !== epoch) return;
+  S.retentionDays = r.retention_days || S.retentionDays;
   const photo = h("div", { class: "photo" }, COPY.developing);
   show(h("div", { class: "reveal" },
     h("div", { class: "txt" },
@@ -297,7 +298,7 @@ function takeHomeScreen() {
   S.onTakeHome = true;
   const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") applyChoice(choice, COPY.deleteFailed); else if (choice === "album") applyChoice(choice, COPY.albumFailed); else { choose(choice); thanks(); } };
   const btns = [btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")];
-  const qr = h("img", { class: "qr", alt: "QR code" }), qrScan = h("p", {}, COPY.qrScan(S.retentionDays || 14));
+  const qr = h("img", { class: "qr", alt: "QR code" }), qrScan = h("p", {}, COPY.qrScan(S.retentionDays));
   const noQr = () => { qr.style.display = qrScan.style.display = "none"; };   // keep the buttons; just drop the QR area
   api(`/api/session/${S.id}/qr.svg`).then(r => { if (!r.ok) throw 0; return r.blob(); }).then(b => { qr.src = objUrl(b); }).catch(noQr);
   show(h("h2", {}, COPY.takeHome), qr,
