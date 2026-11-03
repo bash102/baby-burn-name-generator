@@ -274,16 +274,20 @@ async function deletePhoto() {
   const e = epoch;
   if (await choose("delete")) return e === epoch ? thanks() : null;
   if (e !== epoch) return;
-  show(h("h2", {}, COPY.deleteFailed), h("div", { class: "row" }, btn(COPY.tryAgain, deletePhoto, "big"), btn(COPY.done, () => { choose("done"); thanks(); }, "skip")));
+  const retry = btn(COPY.tryAgain, () => { lockChoices(); deletePhoto(); }, "big");
+  const done = btn(COPY.done, () => { lockChoices(); choose("done"); thanks(); }, "skip");
+  const lockChoices = () => { retry.disabled = done.disabled = true; };
+  show(h("h2", {}, COPY.deleteFailed), h("div", { class: "row" }, retry, done));
 }
 function takeHomeScreen() {
   S.onTakeHome = true;
-  const go = choice => { S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
+  const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
+  const btns = [btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")];
   const qr = h("img", { class: "qr", alt: "QR code" });
   api(`/api/session/${S.id}/qr.svg`).then(r => r.blob()).then(b => { qr.src = objUrl(b); }).catch(() => {});
   show(h("h2", {}, COPY.qrTitle), qr,
     h("p", {}, COPY.qrScan),
-    h("div", { class: "row" }, btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")));
+    h("div", { class: "row" }, ...btns));
   longIdle();
 }
 function thanks() {

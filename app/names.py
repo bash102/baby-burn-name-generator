@@ -22,8 +22,11 @@ class NameStore:
         self._pool: list = []
 
     def set_pool(self, names: Sequence) -> None:
+        names = list(names)
+        if bad := [n.id for n in names if n.id.startswith("stranger-")]:
+            raise ValueError(f"pool ids may not start with 'stranger-' (reserved for fallbacks): {bad}")
         with self._lock:
-            self._pool = list(names)
+            self._pool = names
 
     def _unused(self) -> list:
         used = {row[0] for row in self._db.execute("SELECT name_id FROM used")}

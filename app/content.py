@@ -2,6 +2,7 @@
 
 import os
 import re
+import stat
 import sys
 import tempfile
 from collections import Counter
@@ -24,6 +25,7 @@ BANNED_WORDS: frozenset[str] = frozenset({
     "gop", "maga", "liberal", "liberals", "conservative", "conservatives", "election",
 })
 
+RESERVED_NAME_PREFIX = "stranger-"  # fallback ids minted by app.names
 _ALLOWED_EXTRA = "’“”–—"
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -154,6 +156,8 @@ def _build(raw: dict[str, Any]) -> Content:
     names, seen, texts = [], set(), set()
     for r in _dicts("names", raw["names"], errs):
         where, status, ok = _common("names", r, seen, errs)
+        if str(r.get("id")).startswith(RESERVED_NAME_PREFIX):
+            errs.append(f"{where}: id may not start with {RESERVED_NAME_PREFIX!r} (reserved for fallback names)")
         _check_text(where, r.get("name"), ok, errs)
         key = str(r.get("name")).casefold()
         if key in texts:
@@ -236,12 +240,14 @@ def load_content(dir: Path) -> Content:
 def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> None:
     _build(raw)  # validate the would-be result before touching disk
     path = Path(dir) / f"{kind}.yaml"
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{kind}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             yaml.safe_dump(raw[kind], f, sort_keys=False, allow_unicode=True)
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp, mode)  # mkstemp makes 0600
         os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):
@@ -249,7 +255,13 @@ def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> None:
         raise
 
 
+def _check_kind(kind: str) -> None:
+    if kind not in KINDS:
+        raise ContentError(f"unknown kind {kind!r}; expected one of {KINDS}")
+
+
 def set_status(dir: Path, kind: Kind, id: str, status: str) -> None:
+    _check_kind(kind)
     raw = _read_raw(dir)
     entry = next((r for r in raw[kind] if isinstance(r, dict) and r.get("id") == id), None)
     if entry is None:
@@ -259,6 +271,7 @@ def set_status(dir: Path, kind: Kind, id: str, status: str) -> None:
 
 
 def append_entry(dir: Path, kind: Kind, entry: dict) -> None:
+    _check_kind(kind)
     raw = _read_raw(dir)
     raw[kind].append(dict(entry))
     _commit(dir, kind, raw)

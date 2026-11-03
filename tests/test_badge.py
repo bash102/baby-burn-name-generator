@@ -119,3 +119,12 @@ def test_short_name_group_is_vertically_centered():
     inner = img.convert("L").point(lambda v: 255 - v).crop((60, 60, 894, 612)).getbbox()
     top, bottom = inner[1], 552 - inner[3]
     assert abs(top - bottom) < 60 and top > 20
+
+
+@pytest.mark.parametrize("name", ["Gnome", LONG])
+def test_tagline_capped_below_name(name):
+    pt, _ = fit_name(name)
+    cap = badge.tagline_max_pt(pt)
+    assert cap < pt
+    assert cap <= badge.TAGLINE_NAME_RATIO * pt
+    assert cap <= badge.TAGLINE_MAX_PT

@@ -85,3 +85,10 @@ def test_concurrent_picks_unique(tmp_path):
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert len(out) == 80 and len(set(out)) == 80
+
+
+def test_set_pool_rejects_stranger_ids(tmp_path):
+    import pytest
+    s = NameStore(tmp_path / "n.sqlite3")
+    with pytest.raises(ValueError, match="stranger-"):
+        s.set_pool([N("stranger-1", "X", frozenset())])

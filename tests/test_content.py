@@ -131,3 +131,22 @@ def test_append_invalid_does_not_write(sample_content_dir):
     with pytest.raises(ContentError):
         append_entry(sample_content_dir, "names", _name("dusty-bottom", "Other"))
     assert (sample_content_dir / "names.yaml").read_bytes() == before
+
+
+def test_unknown_kind_raises_contenterror(sample_content_dir):
+    with pytest.raises(ContentError):
+        set_status(sample_content_dir, "bogus", "x", "approved")
+    with pytest.raises(ContentError):
+        append_entry(sample_content_dir, "bogus", {"id": "x"})
+
+
+def test_atomic_write_preserves_mode(sample_content_dir):
+    p = sample_content_dir / "names.yaml"
+    p.chmod(0o640)
+    set_status(sample_content_dir, "names", "dusty-bottom", "draft")
+    assert p.stat().st_mode & 0o777 == 0o640
+
+
+def test_stranger_prefix_id_rejected(sample_content_dir):
+    with pytest.raises(ContentError, match="stranger-"):
+        append_entry(sample_content_dir, "names", _name("stranger-1", "Some Stranger"))

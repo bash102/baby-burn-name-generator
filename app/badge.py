@@ -18,6 +18,10 @@ NAME_MAX_PT, NAME_MIN_PT, NAME_MAX_LINES = 60, 8, 2  # 8 pt is the hard floor: s
 # Full width, sits above the QR corner so the two can never overlap.
 NAME_BOX = (MARGIN_PX, MARGIN_PX, W - MARGIN_PX, 335)
 
+TAGLINE_MAX_PT = 20
+TAGLINE_NAME_RATIO = 0.45  # tagline never outgrows 45% of the name's size
+TAGLINE_MIN_PT = 8
+
 QR_PX = 236  # ~20 mm
 CAPTION_PT = 8
 QR_BOX = (W - MARGIN_PX - QR_PX, H - MARGIN_PX - 36 - QR_PX, W - MARGIN_PX, H - MARGIN_PX - 36)
@@ -98,6 +102,10 @@ def fit_name(name: str) -> tuple[int, list[str]]:
     return _fit(name, NAME_FONT, NAME_MIN_PT, NAME_MAX_PT, NAME_BOX, NAME_MAX_LINES)
 
 
+def tagline_max_pt(name_pt: int) -> int:
+    return max(1, min(TAGLINE_MAX_PT, int(TAGLINE_NAME_RATIO * name_pt)))
+
+
 def _centered_lines(d, lines, font, box, y=None):
     lh = line_height(font)
     cx = (box[0] + box[2]) / 2
@@ -171,7 +179,8 @@ def render_badge(name: str, tagline: str, first_burn: int | None, qr_url: str | 
     gap = 15
     tag_box = (MARGIN_PX, NAME_BOX[3] + gap, right, H - MARGIN_PX - (24 if first_burn is not None else 0))
     pt, lines = fit_name(name)
-    tpt, tlines = _fit(tagline, TEXT_FONT, 8, 20, tag_box, 3)
+    tcap = tagline_max_pt(pt)
+    tpt, tlines = _fit(tagline, TEXT_FONT, min(TAGLINE_MIN_PT, tcap), tcap, tag_box, 3)
     nfont, tfont = name_font(pt), _font(TEXT_FONT, tpt)
     nh, th = line_height(nfont) * len(lines), line_height(tfont) * len(tlines)
 
