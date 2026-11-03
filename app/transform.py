@@ -69,7 +69,7 @@ class OpenAIProvider:
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(api_key=cfg.openai_api_key, timeout=cfg.transform_timeout_s, max_retries=0)
+            client = OpenAI(api_key=cfg.openai_api_key, timeout=cfg.provider_timeout_s, max_retries=0)
         self.client = client
 
     def transform(self, jpeg: bytes) -> bytes:
@@ -102,7 +102,7 @@ class GeminiProvider:
             client = genai.Client(
                 api_key=cfg.gemini_api_key,
                 http_options=types.HttpOptions(
-                    timeout=int(cfg.transform_timeout_s * 1000),
+                    timeout=int(cfg.provider_timeout_s * 1000),
                     retry_options=types.HttpRetryOptions(attempts=1),  # one try; caller owns the budget
                 ),
             )

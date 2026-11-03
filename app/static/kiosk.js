@@ -26,32 +26,39 @@ const COPY = {
   delete: "Delete my photo",
   done: "Done",
   thanks: "Thanks for burning with us!",
+  albumFailed: "Couldn't add your photo to the album. Try again?",
   deleteFailed: "Couldn't delete your photo. Please try again.",
+  deleting: "Deleting…",
+  addingAlbum: "Adding to the album…",
   tryAgain: "Try again",
   thanksSub: "Hydrate. Stay dusty.",
   error: "The dust got in the gears. Tap to start over.",
 };
-// Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal and Take it home. Reveal auto-advances after REVEAL_ADVANCE_MS if there is a photo.
-const IDLE_MS = 20000, IDLE_LONG_MS = 45000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000;
-const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 30000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
+// Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
+// With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
+const IDLE_MS = 20000, IDLE_LONG_MS = 45000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
+const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
 const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam
 const STUB_MODE = new URLSearchParams(location.search).get("stub");
 
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-// Retries 3x (0.5/1/2 s) on network errors or 5xx; returns the last response, or throws the last error.
-// Which calls retry: GETs (idempotent) and POST /finish and /photo-choice (the server dedupes per session).
+// Retries (0.5/1/2 s back-off) on network errors or 5xx; returns the last response, or throws the last error.
+// GETs and POST /finish retry 3x (the server dedupes per session). POST /photo-choice retries once, each try
+// capped at CHOICE_TRY_MS (the server waits <= 10 s for the cloud), so a Delete/Album tap reaches its result
+// or failure screen within 11 + 0.5 + 11 = 22.5 s.
 // POST /api/session never retries: there is no session id yet, so a retry after a lost response could
 // create a duplicate session and a second paid AI transform. The caller shows the error screen instead.
 const once = (path, opts) => STUB ? stubApi(path, opts) : fetch(path, opts);
 async function api(path, opts = {}) {
-  const retries = path === "/api/session" ? 0 : 3;
+  const choice = path.endsWith("/photo-choice"), retries = path === "/api/session" ? 0 : choice ? 1 : 3;
   for (let i = 0; ; i++) {
     let res;
+    const ac = new AbortController(), t = choice && setTimeout(() => ac.abort(), CHOICE_TRY_MS);
     try {
-      res = await once(path, opts);
+      res = await once(path, choice ? { ...opts, signal: ac.signal } : opts);
       if (res.status < 500 || i >= retries) return res;
-    } catch (e) { if (i >= retries) throw e; }
+    } catch (e) { if (i >= retries) throw e; } finally { clearTimeout(t); }
     await sleep(500 * 2 ** i);
   }
 }
@@ -79,8 +86,10 @@ async function stubApi(path, opts) {
   if (path === "/api/quiz") return json(STUB_QUIZ);
   if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), photo_url: "https://example.invalid/p/stub" });
   if (path.endsWith("/qr.svg")) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 5h2v1H6zM5 7h3v1H5z"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
+  if (path.endsWith("/photo-choice")) window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice);   // every try
   if (path.endsWith("/photo-choice") && STUB_MODE === "faildelete" && JSON.parse(opts.body).choice === "delete") return json({ error: "boom" }, 500);
-  if (path.endsWith("/photo-choice")) { window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice); return json({ ok: true }); }
+  if (path.endsWith("/photo-choice") && STUB_MODE === "failalbum" && JSON.parse(opts.body).choice === "album") return json({ ok: false }, 502);
+  if (path.endsWith("/photo-choice")) return json({ ok: true });
   if (path.endsWith("/photo") && m === "GET") {
     if (STUB_MODE === "fail") return json({ status: "failed" });
     if (STUB_MODE === "slow" || ++stubPolls < 3) return json({ status: "pending" }, 202);
@@ -243,8 +252,8 @@ async function finish() {
   if (S.hasPhoto) {
     longIdle();
     const e2 = epoch;
-    pollPhoto(photo, e2);
-    setTimeout(() => { if (e2 === epoch) takeHomeScreen(); }, REVEAL_ADVANCE_MS);
+    // advance only once something is on screen: the dusty photo, or the original after the fallback
+    pollPhoto(photo, e2).then(() => setTimeout(() => { if (e2 === epoch) takeHomeScreen(); }, REVEAL_ADVANCE_MS));
   }
 }
 async function pollPhoto(box, e) {
@@ -274,18 +283,19 @@ async function pollPhoto(box, e) {
 async function choose(choice) {
   try { return (await postJSON(`/api/session/${S.id}/photo-choice`, { choice })).ok; } catch { return false; }
 }
-async function deletePhoto() {
+async function applyChoice(choice, failedText) {
+  show(h("h2", {}, choice === "delete" ? COPY.deleting : COPY.addingAlbum)); longIdle();   // tap feedback while the cloud confirms
   const e = epoch;
-  if (await choose("delete")) return e === epoch ? thanks() : null;
+  if (await choose(choice)) return e === epoch ? thanks() : null;
   if (e !== epoch) return;
-  const retry = btn(COPY.tryAgain, () => { lockChoices(); deletePhoto(); }, "big");
+  const retry = btn(COPY.tryAgain, () => { lockChoices(); applyChoice(choice, failedText); }, "big");
   const done = btn(COPY.done, () => { lockChoices(); choose("done"); thanks(); }, "skip");
   const lockChoices = () => { retry.disabled = done.disabled = true; };
-  show(h("h2", {}, COPY.deleteFailed), h("div", { class: "row" }, retry, done));
+  show(h("h2", {}, failedText), h("div", { class: "row" }, retry, done));
 }
 function takeHomeScreen() {
   S.onTakeHome = true;
-  const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") deletePhoto(); else { choose(choice); thanks(); } };
+  const go = choice => { if (btns.some(b => b.disabled)) return; btns.forEach(b => { b.disabled = true; }); S.onTakeHome = false; if (choice === "delete") applyChoice(choice, COPY.deleteFailed); else if (choice === "album") applyChoice(choice, COPY.albumFailed); else { choose(choice); thanks(); } };
   const btns = [btn(COPY.album, () => go("album")), btn(COPY.delete, () => go("delete"), "skip"), btn(COPY.done, () => go("done"), "big")];
   const qr = h("img", { class: "qr", alt: "QR code" }), qrScan = h("p", {}, COPY.qrScan);
   const noQr = () => { qr.style.display = qrScan.style.display = "none"; };   // keep the buttons; just drop the QR area

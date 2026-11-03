@@ -13,7 +13,7 @@ def test_empty_numeric_names_variable():
     ("SESSION_TTL_S", "-5"),
     ("TRANSFORM_TIMEOUT_S", "inf"),
     ("TRANSFORM_TIMEOUT_S", "nan"),
-    ("PHOTO_RETENTION_DAYS", "abc"),
+    ("PROVIDER_TIMEOUT_S", "abc"),
 ])
 def test_bad_numeric_raises(var, val):
     with pytest.raises(ValueError, match=var):
@@ -66,7 +66,7 @@ def test_defaults():
     assert c.printer == "file"
     assert c.transform_timeout_s == 25
     assert c.s3_endpoint_url is None
-    assert c.photo_retention_days == 14
+    assert c.provider_timeout_s == 90
 
 
 def test_empty_s3_endpoint_is_none():
@@ -99,3 +99,13 @@ def test_env_example_models_match_config_defaults():
         key, _, val = line.partition("=")
         if key.endswith("_MODEL") and not line.startswith("#"):
             assert getattr(Config(), key.lower()) == val, key
+
+
+def test_provider_timeout_separate_from_kiosk_budget():
+    c = Config.from_env({"PROVIDER_TIMEOUT_S": "120", "TRANSFORM_TIMEOUT_S": "25"})
+    assert (c.provider_timeout_s, c.transform_timeout_s) == (120, 25)
+
+
+def test_retention_is_not_configurable():
+    assert not hasattr(Config(), "photo_retention_days")
+    assert "PHOTO_RETENTION_DAYS" not in (ROOT / ".env.example").read_text()

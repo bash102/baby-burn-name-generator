@@ -207,3 +207,29 @@ def test_atomic_write_preserves_mode(sample_content_dir):
 def test_stranger_prefix_id_rejected(sample_content_dir):
     with pytest.raises(ContentError, match="stranger-"):
         append_entry(sample_content_dir, "names", _name("stranger-1", "Some Stranger"))
+
+
+def test_tags_are_lowercased_on_load(sample_content_dir):
+    names = _read(sample_content_dir, "names")
+    names.append(_name("up", "Upper Tot", tags=("Sparkle",)))
+    _write(sample_content_dir, "names", names)
+    qs = _read(sample_content_dir, "questions")
+    q = next(q for q in qs if any(o.get("tags") for o in q["options"]))
+    o = next(o for o in q["options"] if o.get("tags"))
+    o["tags"] = [t.upper() for t in o["tags"]]
+    _write(sample_content_dir, "questions", qs)
+    c = load_content(sample_content_dir)
+    assert "sparkle" in c.tag_vocab and "Sparkle" not in c.tag_vocab
+    opt = next(x for x in next(x for x in c.questions if x.id == q["id"]).options if x.id == o["id"])
+    assert opt.tags and all(t == t.lower() for t in opt.tags) and c.warnings == []
+
+
+def test_single_question_has_at_most_one_correct_option(sample_content_dir):
+    qs = _read(sample_content_dir, "questions")
+    q = next(q for q in qs if q["id"] == "margarita")
+    assert q["type"] == "single"
+    for o in q["options"]:
+        o["correct"] = True
+    _write(sample_content_dir, "questions", qs)
+    with pytest.raises(ContentError, match="exactly one correct"):
+        load_content(sample_content_dir)

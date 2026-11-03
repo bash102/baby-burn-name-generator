@@ -20,6 +20,9 @@ echo "== hostname"
 grep -q "127.0.1.1[[:space:]]*$HOST" /etc/hosts || echo "127.0.1.1 $HOST" | sudo tee -a /etc/hosts >/dev/null
 sudo systemctl enable --now avahi-daemon
 
+echo "== timezone (badge and photo-page dates)"
+sudo timedatectl set-timezone America/New_York
+
 echo "== uv + python deps (run from the checkout, never pip-installed)"
 command -v uv >/dev/null || [ -x "$HOME/.local/bin/uv" ] || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -43,12 +46,21 @@ echo "== .env"
 ENV_NEW=0
 if [ ! -f "$REPO/.env" ]; then cp "$REPO/.env.example" "$REPO/.env"; ENV_NEW=1; fi
 chmod 600 "$REPO/.env"  # holds API keys and ADMIN_PIN
+if [ "$ENV_NEW" -eq 1 ] && grep -qx 'ADMIN_PIN=change-me' "$REPO/.env"; then
+  PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**8):08d}")')"
+  sed -i "s/^ADMIN_PIN=change-me\$/ADMIN_PIN=$PIN/" "$REPO/.env"
+  echo "ADMIN PIN (shown once, also in .env): $PIN"
+fi
 
 echo "== systemd unit"
 sudo install -m 644 "$REPO/deploy/babyburn.service" /etc/systemd/system/babyburn.service
 sudo systemctl daemon-reload
 sudo systemctl enable babyburn.service
-if [ "$ENV_NEW" -eq 1 ]; then
+if [ ! -d "$REPO/content" ]; then
+  echo "NOTE: no private content in $REPO/content; service enabled but NOT started (it would serve sample content)."
+  echo "On your Mac: rsync -a --delete <private content clone>/ pi@$HOST.local:~/baby-burn-name-generator/content/"
+  echo "Then on the Pi: cd $REPO && uv run --env-file .env python -m app.content content/ && sudo systemctl start babyburn"
+elif [ "$ENV_NEW" -eq 1 ]; then
   echo "NOTE: created .env from .env.example; service enabled but NOT started."
   echo "Edit $REPO/.env (provider keys, ADMIN_PIN, PRINTER=usb://0x04f9:0x209b), then: sudo systemctl start babyburn"
 else
