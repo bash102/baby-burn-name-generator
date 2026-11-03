@@ -34,10 +34,11 @@ A PR merges only after it passes: per-task review, simplify, chisel, anti-slop, 
 | 2 | T9 kiosk API, sessions, cloud photos + album, photo page | Wed 11-04 | done and reviewed; in PR #3 |
 | 3 | T10 admin · T8 live-API wiring check | Thu 11-05 morning | done and reviewed; gate passed (PR #3, 184 tests); waits on real chisle-review |
 | 4 | T11 hardware bring-up, drills, soak (with owner) | Sat to Sun 11-07/08 | todo |
-| - | Final whole-branch review + rulings list to owner | Sun 11-08 | todo |
+| - | Final whole-branch review + rulings list to owner | Sun 11-08 | done 11-03: Ready to merge; 6 Important + 8 minor fixed (5709144, 203 tests); residuals parked for T11 |
 
 ## Done
 
+- 2026-11-03: final whole-branch review done and fixed (203 tests). All PRs wait only on the real chisle-review.
 - 2026-11-03: waves 2-3 built, reviewed and gated (PR #3: kiosk server, cloud photos + album, admin review page; 184 tests).
 - 2026-11-03: wave 1 built, task-reviewed and gated (PR #2, 112 tests); content drafts reviewed twice and pushed (private drafts-v1).
 - 2026-11-02: design approved; plan approved; lore research; public + private repos created; T0 built and task-reviewed (PR #1).
