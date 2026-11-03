@@ -1,0 +1,9 @@
+content/
+data/
+.env
+certs/
+__pycache__/
+.venv/
+.superpowers/
+.claude/
+out/
