@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Baby Burn admin</title>
+<style>
+body{font:15px/1.4 system-ui,sans-serif;margin:0;background:#faf6ee;color:#2b2118}
+header{background:#2b2118;padding:8px 20px;position:sticky;top:0;z-index:2}
+header a{color:#f4d9a0;margin-right:18px;text-decoration:none;font-weight:600}
+main{padding:16px 20px;max-width:1100px;margin:auto}
+.banner{padding:10px 14px;border-radius:6px;margin:10px 0;white-space:pre-wrap}
+.err{background:#fde2e2;border:1px solid #c0392b;color:#7b1d12}.warn{background:#fff3cd;border:1px solid #d4a017}.ok{background:#e3f4e1}
+.low{color:#c0392b;font-weight:700}
+table{border-collapse:collapse}td,th{padding:4px 12px;text-align:left}
+.row{display:flex;gap:14px;align-items:flex-start;padding:10px;border-bottom:1px solid #e5dccb;background:#fff}
+.row.needs{background:#fff6dd;border-left:5px solid #e08a00}.row.fav{border-left:5px solid #2e7d32}
+.row.gone{display:none}
+.row img{width:190px;height:auto;border:1px solid #ccc;flex:none}.row .body{flex:1}
+.row .acts{display:flex;gap:6px;flex:none}
+button{font:inherit;padding:5px 12px;border-radius:5px;border:1px solid #888;background:#eee;cursor:pointer}
+button.yes{background:#2e7d32;color:#fff;border-color:#2e7d32}button.no{background:#fff;color:#c0392b;border-color:#c0392b}
+.row[data-status=approved] .yes,.row[data-status=rejected] .no{outline:3px solid #2b2118}
+.tag{background:#eee;border-radius:10px;padding:1px 8px;margin-right:4px;font-size:13px}
+.note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:#2e7d32}
+form.filters,details{margin:10px 0}form.filters>*{margin-right:10px}
+input,select,textarea{font:inherit;padding:4px}
+</style></head><body>
+<header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
+<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a></header>
+<main>
+{% if sample_banner %}<div class="banner err">{{ sample_banner }}</div>{% endif %}
+{% if st.content_error %}<div class="banner err"><b>Content error (kiosk is using the previous content):</b>
+{{ st.content_error }}</div>{% endif %}
+{% if msg %}<div class="banner {{ 'ok' if msg == 'Added.' else 'err' }}">{{ msg }}</div>{% endif %}
+<div id="flash" class="banner err" hidden></div>
+
+{% if page == "dashboard" %}
+<h1>Dashboard</h1>
+{% for w in st.content.warnings %}<div class="banner warn">{{ w }}</div>{% endfor %}
+<h2>Names remaining: <span class="{{ 'low' if remaining < low }}">{{ remaining }}</span></h2>
+<p>{% for t, n in by_tag %}<span class="tag {{ 'low' if n < low }}">{{ t }}: {{ n }}</span>{% endfor %}
+(red = under {{ low }})</p>
+<h2>Content</h2>
+<table><tr><th></th><th>approved</th><th>draft</th><th>rejected</th></tr>
+{% for k, c in by_kind.items() %}<tr><td><a href="/admin/review?kind={{ k }}">{{ k }}</a></td>
+<td>{{ c.approved }}</td><td>{{ c.draft }}</td><td>{{ c.rejected }}</td></tr>{% endfor %}</table>
+<h2>Photos</h2>
+<p>Album: <a href="{{ album_url }}" target="_blank" rel="noopener">{{ album_url }}</a> ({{ album_count }} photos).
+Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}</span></p>
+<h2>Transform provider</h2>
+<p>Now: <b id="prov">{{ st.provider_name }}</b> (runtime only; .env stays the default)
+{% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'>{{ p }}</button> {% endfor %}</p>
+<h2>Printing</h2>
+<p><button data-post="/admin/test-print">Test print</button></p>
+<table>{% for i, (nid, display, tagline, fb) in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
+<td><button data-post="/admin/reprint" data-body='{{ {"index": i}|tojson|forceescape }}'>Reprint</button></td></tr>
+{% else %}<tr><td>No badges printed yet.</td></tr>{% endfor %}</table>
+
+{% else %}
+<h1>Review {{ kind }}</h1>
+<form class="filters" method="get">
+<select name="kind" onchange="this.form.submit()">{% for k in ["names","questions","taglines"] %}<option {{ 'selected' if k == kind }}>{{ k }}</option>{% endfor %}</select>
+<select name="status" onchange="this.form.submit()"><option value="">any status</option>{% for s in statuses %}<option {{ 'selected' if s == status }}>{{ s }}</option>{% endfor %}</select>
+{% if kind == "names" %}<select name="tag" onchange="this.form.submit()"><option value="">any tag</option>{% for t in all_tags %}<option {{ 'selected' if t == tag }}>{{ t }}</option>{% endfor %}</select>{% endif %}
+{% if kind != "taglines" %}<label><input type="checkbox" name="needs_owner" value="1" {{ 'checked' if needs_owner }} onchange="this.form.submit()"> needs owner</label>{% endif %}
+<b id="count">{{ rows|length }}</b> shown
+<button type="button" id="all-yes">Approve all visible</button></form>
+
+{% for r in rows %}
+<div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}">
+{% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png">{% endif %}
+<div class="body">
+{% if kind == "names" %}<b>{{ r.name }}</b> {% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+{% elif kind == "taglines" %}<b>{{ r.text }}</b>
+{% else %}<b>{{ r.prompt }}</b> ({{ r.type }}){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
+<ul>{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
+{% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}</li>{% endfor %}</ul>
+{% if r.quip %}<div>Quip: <i>{{ r.quip }}</i></div>{% endif %}{% endif %}
+{% if r.needs_owner %}<div class="note">Needs owner{% if r.note %}: {{ r.note }}{% endif %}</div>
+{% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}
+<small class="st">{{ r.status }}</small></div>
+<div class="acts"><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
+</div>
+{% else %}<p>Nothing matches these filters.</p>{% endfor %}
+
+<details {{ 'open' if kind and msg }}><summary><b>Add a {{ kind[:-1] }}</b> (approved immediately)</summary>
+<form method="post" action="/admin/add"><input type="hidden" name="kind" value="{{ kind }}">
+{% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="40" required size="30">
+<input name="tags" placeholder="tags, comma separated" size="30"></p>
+{% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="32" required size="40"></p>
+{% else %}<p><input name="prompt" placeholder="Question" required size="60">
+<select name="type"><option>single</option><option>multi</option></select></p>
+{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="45" size="40">
+<label><input type="checkbox" name="correct_{{ s }}"> correct</label>
+<input name="tags_{{ s }}" placeholder="tags" size="20"></p>{% endfor %}
+<p><input name="quip" placeholder="Quip (optional)" maxlength="60" size="40"></p>{% endif %}
+<button class="yes">Add</button></form></details>
+{% endif %}
+</main>
+<script>
+const flash = m => { const f = document.getElementById("flash"); f.textContent = m; f.hidden = !m; };
+const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+  body: JSON.stringify(body || {})}).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status); });
+document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
+  post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
+    flash(""); if (b.dataset.post.endsWith("provider")) location.reload(); else b.textContent += " ✓";
+  }).catch(e => flash("Failed: " + e.message)));
+const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }};
+function setStatus(row, s) {
+  return post("/admin/status", {kind, id: row.dataset.id, status: s}).then(() => {
+    row.dataset.status = s; row.querySelector(".st").textContent = s;
+    if (want && want !== s) { row.classList.add("gone"); count(); }
+  });
+}
+const count = () => { const c = document.getElementById("count"); if (c) c.textContent = document.querySelectorAll(".row:not(.gone)").length; };
+document.querySelectorAll(".row .acts button").forEach(b => b.onclick = () =>
+  setStatus(b.closest(".row"), b.dataset.s).then(() => flash("")).catch(e => flash("Failed: " + e.message)));
+const all = document.getElementById("all-yes");
+if (all) all.onclick = async () => {
+  const rows = [...document.querySelectorAll(".row:not(.gone)")].filter(r => r.dataset.status !== "approved");
+  if (!rows.length || !confirm("Approve all " + rows.length + " visible " + kind + "?")) return;
+  try { for (const r of rows) await setStatus(r, "approved"); flash(""); } catch (e) { flash("Stopped: " + e.message); }
+};
+</script></body></html>

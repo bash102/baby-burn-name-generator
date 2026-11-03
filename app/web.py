@@ -13,6 +13,7 @@ from typing import Callable
 import segno
 from flask import Flask, Response, jsonify, redirect, request
 
+from app.admin import bp as admin_bp
 from app.badge import render_badge
 from app.config import ROOT, Config
 from app.content import Content, ContentError, load_content
@@ -92,6 +93,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
                   cfg.transform_provider, provider or get_provider(cfg.transform_provider, cfg),
                   sessions, photos, cloud)
     app.extensions["babyburn"] = st
+    app.register_blueprint(admin_bp)
 
     @app.get("/")
     def index():

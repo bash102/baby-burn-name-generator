@@ -68,3 +68,13 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 
 - Copy `data/album/` off the Pi (backup of shared photos).
 - Unshared photos vanish 14 days after upload (lifecycle on `tmp/`). Album photos stay until you delete the `album/` prefix in the R2 dashboard.
+
+## 8. Review content on your Mac
+
+The admin pages need `ADMIN_PIN` (empty or `change-me` disables them) and refuse edits while the public sample content is loaded. Point at your private content clone:
+
+```
+CONTENT_DIR=<path to private content clone> ADMIN_PIN=<pin> uv run --env-file .env python -m app.web --dev
+```
+
+Then open http://127.0.0.1:8000/admin/review (any username, the PIN as password). Approve/Reject write straight into the clone YAML files; commit them there when you are done.
