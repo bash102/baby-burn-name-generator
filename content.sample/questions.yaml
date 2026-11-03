@@ -1,0 +1,59 @@
+- id: first_burn
+  fixed: first_burn
+  type: single
+  prompt: "Which Baby Burn was your first?"
+  options:
+    - {id: bb1, text: "Baby Burn 1 (OG dust)", first_burn: 1}
+    - {id: bb2, text: "Baby Burn 2", first_burn: 2}
+    - {id: bb3, text: "This one! Ring the bell!", first_burn: 3}
+  status: approved
+- id: margarita
+  type: single
+  prompt: "What goes in a Burning Man margarita?"
+  options:
+    - {id: a, text: "Gatorade, a warm Tecate, a little water", correct: true, tags: [dust]}
+    - {id: b, text: "Tequila, lime, salt"}
+  quip: "Hydration is a cocktail."
+  status: approved
+  needs_owner: false
+- id: ride
+  type: single
+  prompt: "Pick your ride for the playa."
+  options:
+    - {id: a, text: "A bike with too many blinky lights", tags: [sparkle]}
+    - {id: b, text: "A sturdy wagon pulled by a gnome", tags: [gnome]}
+    - {id: c, text: "An art car shaped like a giant fish", tags: [beast]}
+  quip: "If it doesn't blink, it doesn't exist."
+  status: approved
+  needs_owner: false
+- id: pack
+  type: multi
+  prompt: "What is in your go-bag? Pick all that apply."
+  options:
+    - {id: a, text: "Goggles and a dust mask", tags: [dust]}
+    - {id: b, text: "Glitter, obviously", tags: [sparkle]}
+    - {id: c, text: "A tiny pointy hat", tags: [gnome]}
+    - {id: d, text: "Fuzzy boots", tags: [beast]}
+  quip: "You will find that glitter in 2031."
+  status: approved
+  needs_owner: false
+- id: sunrise
+  type: single
+  prompt: "How do you greet the sunrise?"
+  options:
+    - {id: a, text: "Still awake from last night", tags: [night]}
+    - {id: b, text: "Up early with coffee for everyone", tags: [gnome]}
+    - {id: c, text: "Asleep until noon", tags: [beast]}
+  quip: "The sun has never once asked how you slept."
+  status: approved
+  needs_owner: false
+- id: principle
+  type: single
+  prompt: "Favorite of the Ten Principles?"
+  options:
+    - {id: a, text: "Gifting", tags: [sparkle]}
+    - {id: b, text: "Leaving No Trace", tags: [dust]}
+    - {id: c, text: "Radical Self-expression", tags: [night]}
+  quip: "Gifting is just leaving no trace with extra steps."
+  status: approved
+  needs_owner: false
