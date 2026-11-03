@@ -47,7 +47,7 @@ Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
    ```
    cd ~/baby-burn-name-generator
    chmod 600 ~/r2.env
-   grep -E '^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=' ~/r2.env > ~/r2.lines && [ -s ~/r2.lines ] && sed -i -E '/^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=/d' .env && cat ~/r2.lines >> .env; rm -f ~/r2.env ~/r2.lines
+   grep -E '^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=' ~/r2.env > ~/r2.lines && [ -s ~/r2.lines ] && sed -i -E '/^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=/d' .env && sed -i -e '$a\' .env && cat ~/r2.lines >> .env; rm -f ~/r2.env ~/r2.lines
    ```
    Then check the Pi `.env` (`nano .env`):
    - `TRANSFORM_PROVIDER` is `openai` or `gemini`, with the matching `OPENAI_API_KEY` or `GEMINI_API_KEY`

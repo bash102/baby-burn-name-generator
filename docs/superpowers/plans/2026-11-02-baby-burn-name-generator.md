@@ -259,7 +259,7 @@ with self._lock, self._db:                        # one transaction
 - [ ] **Step 2:** Draft **≥ 360 names**, all `status: draft`. Size each tag's share by how many quiz options/costume looks point to it (popular tags like `gnome`, `dust`, `sparkle`, `fur` get ≥ 35 each); every name ≥1 tag. Mix classic playa-name patterns with miniature/"Lil'"/"Baby" twists. Flag sex/body humor `needs_owner: true`.
 - [ ] **Step 3:** Draft **≥ 45 questions** (≥ 35 `single`, ≥ 8 `multi`), including every owner seed question in `SEEDS.md` verbatim. Each option ≤ 45 chars, ≤ 4 options, a `quip` ≤ 60 chars, tags on options where natural.
 - [ ] **Step 4:** Draft **≥ 30 taglines** ≤ 32 chars.
-- [ ] **Step 5:** `python -m app.content content/` passes with zero errors (after T1 merges; until then, hand-check against the schema). No real people's names, no drugs, no politics. Commit and push to the private repo only.
+- [ ] **Step 5:** `python -m app.content content/` passes with zero errors (after T1 merges; until then, hand-check against the schema). No real people's names, no drug content, non-partisan politics only (owner decision 2026-11-03). Commit and push to the private repo only.
 
 ---
 
