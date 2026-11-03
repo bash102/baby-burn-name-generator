@@ -190,7 +190,7 @@ async function countdown(video, count, shutter) {
 // ---- Quiz ----
 async function quizScreen() {
   if (!S.quiz) {
-    try { const r = await api("/api/quiz"); if (!r.ok) throw 0; const d = await r.json(); S.quiz = d.questions; S.retentionDays = d.retention_days || 14; } catch { return finish(); }
+    try { const r = await api("/api/quiz"); if (!r.ok) throw 0; const d = await r.json(); S.quiz = d.questions; S.retentionDays = d.retention_days; } catch { return finish(); }
   }
   if (S.qi >= S.quiz.length) return finish();
   const q = S.quiz[S.qi], picked = new Set();
