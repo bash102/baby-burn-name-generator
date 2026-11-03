@@ -270,14 +270,16 @@ def _check_kind(kind: str) -> None:
         raise ContentError(f"unknown kind {kind!r}; expected one of {KINDS}")
 
 
-def set_status(dir: Path, kind: Kind, id: str, status: str) -> None:
+def set_status(dir: Path, kind: Kind, ids: str | list[str], status: str) -> None:
+    """Set the status of one id, or of every listed id in one write; any unknown id writes nothing."""
     _check_kind(kind)
     with _LOCK:
         raw = _read_raw(dir)
-        entry = next((r for r in raw[kind] if isinstance(r, dict) and r.get("id") == id), None)
-        if entry is None:
-            raise ContentError(f"{kind}[{id}]: no such entry")
-        entry["status"] = status  # _commit rejects an invalid status
+        by_id = {r.get("id"): r for r in raw[kind] if isinstance(r, dict)}
+        for id in [ids] if isinstance(ids, str) else ids:
+            if not isinstance(id, str) or id not in by_id:
+                raise ContentError(f"{kind}[{id}]: no such entry")
+            by_id[id]["status"] = status  # _commit rejects an invalid status
         _commit(dir, kind, raw)
 
 

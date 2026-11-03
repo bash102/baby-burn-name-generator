@@ -1,7 +1,9 @@
 import html
 import io
+import random
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,6 +18,7 @@ from app.transform import FakeProvider
 
 BASE = "https://ph.example"
 SECRET = "sekret"
+ALBUM_STATUS = "This photo is in the Baby Burn album and stays there."
 T0 = datetime(2026, 11, 14, 18, 30, tzinfo=timezone.utc)
 
 
@@ -132,7 +135,7 @@ def test_print_failure_keeps_name(tmp_path, sample_content_dir):
     k = Kiosk(tmp_path, sample_content_dir, printer=jammed)
     r = k.finish(k.session(photo=False))
     assert r["printed"] is False and r["name"]
-    assert k.state.recent_badges[-1][1] == r["name"]
+    assert k.state.recent_badges[-1][2] == r["name"]
 
 
 class Boom(FakeProvider):
@@ -182,7 +185,7 @@ def test_session_uploads_original_and_page(tmp_path, sample_content_dir):
     k.state.cloud.drain()
     page = k.s3.objects[f"p/{tok}"]
     assert page["ContentType"].startswith("text/html") and page["CacheControl"] == "no-cache"
-    assert "original.jpg" in page["Body"].decode() and "self-destructs" in page["Body"].decode()
+    assert "original.jpg" in page["Body"].decode() and "will be deleted on" in page["Body"].decode()
     orig = k.s3.objects[f"tmp/{tok}/original.jpg"]
     assert orig["ContentType"] == "image/jpeg"
     assert orig["ContentDisposition"] == 'attachment; filename="baby-burn-original.jpg"'
@@ -209,7 +212,7 @@ def test_choice_album_moves_to_album_prefix(k):
     assert f"album/{SECRET}/{tok}/original.jpg" in k.keys()
     assert f"album/{SECRET}/{tok}/dusty.jpg" in k.keys()
     assert not [x for x in k.keys() if x.startswith(f"tmp/{tok}/")]
-    assert "No expiry" in k.page(tok) and "self-destructs in" not in k.page(tok)
+    assert ALBUM_STATUS in k.page(tok) and "will be deleted on" not in k.page(tok)
     assert html.escape(r["name"]) in k.album_page() and tok in k.album_page()
     assert f"<a href='{BASE}/album/{SECRET}/{tok}/original.jpg'><img src='{BASE}/album/{SECRET}/{tok}/dusty.jpg'" \
         in k.album_page()  # grid shows dusty, tap for original
@@ -242,8 +245,9 @@ def test_choice_delete_removes_everywhere(k):
     k.drain()
     assert k.keys(tok) == {f"p/{tok}"}
     assert html.escape(r["name"]) not in k.album_page() and tok not in k.album_page()
-    assert "This photo was deleted." in k.page(tok) and ".jpg" not in k.page(tok)
+    assert "This photo has been deleted." in k.page(tok) and ".jpg" not in k.page(tok)
     assert not (k.cfg.data_dir / "photos" / tok).exists()
+    assert not list((k.cfg.data_dir / "album").glob(f"*-{tok}-*.jpg"))  # explicit delete drops the backups
 
 
 def test_choice_done_keeps_tmp_and_countdown(k):
@@ -255,8 +259,8 @@ def test_choice_done_keeps_tmp_and_countdown(k):
     k.drain()
     assert f"tmp/{tok}/original.jpg" in k.keys()
     page = k.page(tok)
-    assert "<script" in page and "self-destructs in" in page
-    assert (T0 + timedelta(days=14)).isoformat() in page and "Sat Nov 28" in page
+    assert "<script" in page and "This photo will be deleted on Sat Nov 28 (in 14 days, 0 hours)." in page
+    assert (T0 + timedelta(days=14)).isoformat() in page
 
 
 def test_upload_failure_does_not_block_finish(tmp_path, sample_content_dir):
@@ -273,16 +277,20 @@ def test_upload_failure_does_not_block_finish(tmp_path, sample_content_dir):
 
 
 def test_photo_page_states():
-    kw = dict(uploaded_at=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
+    kw = dict(uploaded_at=T0, now=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
     temp = render_photo_page("tok", state="temp", has_dusty=True, **kw)
-    assert "self-destructs in" in temp and "on or after Sat Nov 28" in temp and "setInterval" in temp
+    assert ("This photo will be deleted on Sat Nov 28 (in 14 days, 0 hours). Download it before then." in temp
+            and "setInterval" in temp)
+    assert "Download it before then." in temp.split("<script>")[1]  # live countdown uses the same copy
+    assert "This photo has been deleted." in temp.split("<script>")[1]  # _GONE_JS
     album = render_photo_page("tok", state="album", has_dusty=True, **kw)
-    assert "No expiry" in album and "self-destructs in" not in album
+    assert ALBUM_STATUS in album and "will be deleted" not in album
     assert f"album/{SECRET}/tok/dusty.jpg" in album
     gone = render_photo_page("tok", state="deleted", has_dusty=True, **kw)
-    assert "This photo was deleted." in gone and "<img" not in gone
+    assert "This photo has been deleted." in gone and "<img" not in gone
     dev = render_photo_page("tok", state="temp", has_dusty=False, **kw)
     assert "still developing" in dev and "3000" in dev
+    assert "Your dusty baby didn't develop. Your original is below." in dev
     for page in (temp, album, gone, dev):
         assert not re.search(r"""(src|href)=["']?(https?:)?//(?!ph\.example)""", page)  # no external assets
 
@@ -380,7 +388,7 @@ def test_dev_bucket_when_photo_bucket_unset(tmp_path, sample_content_dir):
     c.post(f"/api/session/{sid}/photo-choice", json={"choice": "album"})
     st.cloud.drain()
     page = c.get(url)
-    assert url.startswith("/cloud/p/") and page.mimetype == "text/html" and b"No expiry" in page.data
+    assert url.startswith("/cloud/p/") and page.mimetype == "text/html" and ALBUM_STATUS.encode() in page.data
     img = re.search(r"src='([^']+original\.jpg)'", page.data.decode()).group(1)
     assert c.get(img).mimetype == "image/jpeg"
 
@@ -464,6 +472,8 @@ def test_delete_reports_cloud_failure_then_succeeds_on_retry(tmp_path, sample_co
     r = k.c.post(f"/api/session/{sid}/photo-choice", json={"choice": "delete"})
     assert r.status_code == 502 and r.get_json() == {"ok": False}
     assert not (k.cfg.data_dir / "photos" / tok).exists()  # local copies are gone regardless
+    r = k.c.get(f"/api/session/{sid}/photo")  # and the kiosk stops showing it
+    assert r.status_code == 404 and r.get_json() == {"error": "deleted"}
     assert any(key.startswith("tmp/") for key in k.keys(tok))
     s3.broken = False
     r = k.c.post(f"/api/session/{sid}/photo-choice", json={"choice": "delete"})
@@ -471,12 +481,111 @@ def test_delete_reports_cloud_failure_then_succeeds_on_retry(tmp_path, sample_co
     assert k.keys(tok) == {f"p/{tok}"}
 
 
-def test_photo_store_delete_removes_album_backups(tmp_path):
-    from app.photos import PhotoStore
-    ps = PhotoStore(tmp_path)
-    ps.save_original("tok1", b"x")
-    ps.save_original("tok2", b"y")
-    ps.copy_to_album_backup("tok1", "n1")
-    ps.copy_to_album_backup("tok2", "n2")
-    ps.delete("tok1")
-    assert [p.name for p in ps.album_dir.iterdir()] == ["n2-tok2-original.jpg"]
+
+def test_expiry_keeps_album_backups(k):
+    sid = k.session()
+    k.drain()
+    tok = k.sess(sid).token
+    k.finish(sid)
+    k.choose(sid, "album")
+    k.drain()
+    k.clock.t += k.cfg.session_ttl_s + 1
+    k.state.sessions.expire()
+    assert not (k.cfg.data_dir / "photos" / tok).exists()
+    assert {p.name.split(f"-{tok}-")[1] for p in (k.cfg.data_dir / "album").glob(f"*-{tok}-*.jpg")} \
+        == {"original.jpg", "dusty.jpg"}
+
+
+class SlowFirstAlbumPut(MemoryS3):
+    """The first album-page write stalls long enough for every other op to finish; the rest jitter."""
+    n = 0
+
+    def put_object(self, **kw):
+        if kw["Key"].endswith("index.html"):
+            self.n += 1
+            time.sleep(0.3 if self.n == 1 else random.random() / 500)
+        super().put_object(**kw)
+
+
+def test_album_page_always_matches_index_under_concurrency(tmp_path, sample_content_dir):
+    k = Kiosk(tmp_path, sample_content_dir, s3=SlowFirstAlbumPut())
+    cloud, toks = k.state.cloud, [f"tok{i:02d}" for i in range(40)]
+    for t in toks:
+        cloud.share(t, f"Baby {t}")
+    for t in toks[1::3]:
+        cloud.delete(t)
+    k.drain()
+    want = {t for t, _ in cloud.album.entries()}
+    assert want == set(toks) - set(toks[1::3])
+    assert set(re.findall(rf"/album/{SECRET}/(tok\d+)/dusty\.jpg", k.album_page())) == want
+
+
+def test_cloud_op_chains_are_pruned(k):
+    cloud = k.state.cloud
+    for i in range(50):
+        cloud.upload(f"t{i}", original=b"x")
+        cloud.share(f"t{i}", "n")
+    k.drain()
+    assert cloud._last == {}
+
+
+def test_share_reports_truthfully(k):
+    cloud = k.state.cloud
+    assert cloud.share("a", "n").result() is True
+    assert cloud.share("a", "n").result() is True  # already shared: idempotent
+    cloud.delete("b")
+    assert cloud.share("b", "n").result() is False
+
+
+def test_album_after_delete_is_409(k):
+    sid = k.session()
+    k.drain()
+    k.finish(sid)
+    k.choose(sid, "delete")
+    r = k.c.post(f"/api/session/{sid}/photo-choice", json={"choice": "album"})
+    assert r.status_code == 409 and r.get_json() == {"ok": False}
+    k.choose(sid, "done")  # "done" still fine
+
+
+def test_album_twice_is_ok(k):
+    sid = k.session()
+    k.drain()
+    k.finish(sid)
+    k.choose(sid, "album")
+    k.choose(sid, "album")
+
+
+def test_delete_drops_session_photo(k):
+    sid = k.session()
+    k.drain()
+    k.finish(sid)
+    k.choose(sid, "delete")
+    r = k.c.get(f"/api/session/{sid}/photo")
+    assert r.status_code == 404 and r.get_json() == {"error": "deleted"}
+    s = k.sess(sid)
+    assert s.photo is None and s.transform_future is None and s.tag_future is None
+
+
+@pytest.mark.parametrize("body", [
+    {"answers": [{"question_id": ["x"], "option_ids": ["a"]}]},  # unhashable id
+    {"answers": [{"question_id": True, "option_ids": ["a"]}]},
+    {"answers": [{"question_id": "ride", "option_ids": "a"}]},
+    {"answers": [{"question_id": "ride", "option_ids": [1]}]},
+    {"answers": ["ride"]},
+    {"answers": "ride"},
+    [1, 2],
+])
+def test_finish_rejects_malformed_answers(k, body):
+    sid = k.session(photo=False)
+    r = k.c.post(f"/api/session/{sid}/finish", json=body)
+    assert r.status_code == 400 and r.get_json()["error"]
+    assert k.sess(sid).result is None and not k.prints()  # nothing cached or printed
+    assert k.finish(sid, [{"question_id": 1, "option_ids": ["a"]}])["name"]
+
+
+def test_server_countdown_uses_now():
+    kw = dict(state="temp", has_dusty=True, uploaded_at=T0, album_url=f"{BASE}/album/{SECRET}/index.html")
+    page = render_photo_page("tok", now=T0 + timedelta(days=3, hours=5, minutes=10), **kw)
+    assert "This photo will be deleted on Sat Nov 28 (in 10 days, 18 hours). Download it before then." in page
+    soon = render_photo_page("tok", now=T0 + timedelta(days=14) - timedelta(minutes=30), **kw)
+    assert "<p id=status class=status>This photo is about to be deleted. Download it now if you want it.</p>" in soon

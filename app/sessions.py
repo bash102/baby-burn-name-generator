@@ -21,6 +21,7 @@ class Session:
     finished_at: float | None = None
     name_id: str | None = None
     choice: str | None = None
+    deleted: bool = False  # guest chose delete: the kiosk stops serving the photo
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -29,9 +30,9 @@ class SessionStore:
     the transform task, before its future resolves; `on_expire(session)` runs when a session is dropped."""
 
     def __init__(self, executor, ttl_s: float, now: Callable[[], float], *,
-                 on_photo: Callable[[Session], None] | None = None,
-                 on_dusty: Callable[[Session, bytes], None] | None = None,
-                 on_expire: Callable[[Session], None] | None = None):
+                 on_photo: Callable[[Session], None],
+                 on_dusty: Callable[[Session, bytes], None],
+                 on_expire: Callable[[Session], None]):
         self.executor, self.ttl_s, self.now = executor, ttl_s, now
         self.on_photo, self.on_dusty, self.on_expire = on_photo, on_dusty, on_expire
         self._sessions: dict[str, Session] = {}
@@ -42,16 +43,14 @@ class SessionStore:
         with self._lock:
             self._sessions[s.id] = s
         if photo:
-            if self.on_photo:
-                self.on_photo(s)
+            self.on_photo(s)
 
             def transform():
                 jpeg = provider.transform(photo)
-                if self.on_dusty:
-                    try:
-                        self.on_dusty(s, jpeg)
-                    except Exception:
-                        log.exception("on_dusty hook failed")
+                try:
+                    self.on_dusty(s, jpeg)
+                except Exception:
+                    log.exception("on_dusty hook failed")
                 return jpeg
 
             s.transform_future = self.executor.submit(transform)
@@ -70,5 +69,4 @@ class SessionStore:
                 del self._sessions[s.id]
         for s in old:
             s.photo = None
-            if self.on_expire:
-                self.on_expire(s)
+            self.on_expire(s)

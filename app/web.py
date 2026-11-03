@@ -5,6 +5,7 @@ import logging
 import random
 import threading
 import time
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -24,7 +25,7 @@ from app.sessions import Session, SessionStore
 from app.transform import Provider, get_provider
 
 log = logging.getLogger(__name__)
-CLOUD_DELETE_WAIT_S = 10
+CLOUD_WAIT_S = 10
 CHOICES = {"album", "delete", "done"}
 DEV_CLOUD = "/cloud"  # dev-only route serving the in-memory bucket when PHOTO_BUCKET is unset
 
@@ -41,7 +42,7 @@ class AppState:
     photos: PhotoStore
     cloud: CloudPhotos
     content_error: str | None = None
-    recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (name_id, display, tagline, first_burn)
+    recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (id, name_id, display, tagline, first_burn)
     rng: random.Random = field(default_factory=random.SystemRandom)
 
     def reload_content(self) -> None:
@@ -97,7 +98,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         cloud.upload(s.token, dusty=jpeg)
 
     sessions = SessionStore(ThreadPoolExecutor(8, "transform"), cfg.session_ttl_s, now,
-                            on_photo=on_photo, on_dusty=on_dusty, on_expire=lambda s: s.token and photos.delete(s.token))
+                            on_photo=on_photo, on_dusty=on_dusty, on_expire=lambda s: s.token and photos.discard(s.token))
     st = AppState(cfg, content, names, printer or make_printer(cfg.printer, cfg.data_dir / "prints"),
                   cfg.transform_provider, provider or get_provider(cfg.transform_provider, cfg),
                   sessions, photos, cloud)
@@ -133,9 +134,12 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         s = sessions.get(sid)
         if not s:
             return _expired()
+        chosen = _parse_answers(request.get_json(silent=True))
+        if chosen is None:
+            return jsonify(error="answers must be a list of {question_id, option_ids: [str]}"), 400
         with s.lock:
             if s.result is None:
-                s.result = _finish(st, s, (request.get_json(silent=True) or {}).get("answers"))
+                s.result = _finish(st, s, chosen)
                 s.finished_at = now()
         return jsonify(s.result)
 
@@ -155,6 +159,8 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         s = sessions.get(sid)
         if not s:
             return _expired()
+        if s.deleted:
+            return jsonify(error="deleted"), 404
         f = s.transform_future
         if f is None:
             return jsonify(status="failed")
@@ -176,15 +182,29 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
             return jsonify(error=f"choice must be one of {sorted(CHOICES)}"), 400
         if choice == "album" and not s.result:
             return jsonify(error="finish first"), 400
-        s.choice = choice
         if s.token and choice == "album":
-            cloud.share(s.token, s.result["name"])
+            if s.deleted:
+                return jsonify(ok=False), 409
+            fut = cloud.share(s.token, s.result["name"])
+            try:
+                shared = fut.result(timeout=CLOUD_WAIT_S)
+            except Exception:
+                shared = None  # not confirmed yet; it stays queued
+            if shared is False:  # the cloud copy was already deleted
+                return jsonify(ok=False), 409
+            s.choice = choice  # before the backup copy, so a dusty landing now is backed up too
             photos.copy_to_album_backup(s.token, s.name_id)
-        elif s.token and choice == "delete":
+            if shared is None:
+                log.warning("album share not confirmed for %s", s.token[:6] + "…")
+                return jsonify(ok=False), 502
+            return jsonify(ok=True)
+        s.choice = choice
+        if s.token and choice == "delete":
+            s.deleted, s.photo, s.transform_future, s.tag_future = True, None, None, None
             fut = cloud.delete(s.token)
             photos.delete(s.token)
             try:  # privacy: only say ok once the cloud copy is really gone
-                fut.result(timeout=CLOUD_DELETE_WAIT_S)
+                fut.result(timeout=CLOUD_WAIT_S)
             except Exception:
                 log.warning("cloud delete not confirmed for %s", s.token[:6] + "…")
                 return jsonify(ok=False), 502
@@ -201,11 +221,25 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
     return app
 
 
-def _finish(st: AppState, s: Session, answers) -> dict:
-    chosen = {}
-    for a in answers if isinstance(answers, list) else []:
-        if isinstance(a, dict) and isinstance(a.get("option_ids"), list):
-            chosen[a.get("question_id")] = set(map(str, a["option_ids"]))
+def _parse_answers(body) -> dict[str, set[str]] | None:
+    """{question_id: option ids} from a /finish body, or None if malformed. A missing `answers` is none given."""
+    if not isinstance(body, dict):
+        return None if body is not None else {}
+    answers, chosen = body.get("answers", []), {}
+    if not isinstance(answers, list):
+        return None
+    for a in answers:
+        if not isinstance(a, dict):
+            return None
+        qid, opts = a.get("question_id"), a.get("option_ids")
+        if (not isinstance(qid, (str, int)) or isinstance(qid, bool) or not isinstance(opts, list)
+                or not all(isinstance(o, str) for o in opts)):
+            return None
+        chosen[str(qid)] = set(opts)
+    return chosen
+
+
+def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     tags, first_burn = set(), None
     fb, pool = _served(st.content)
     for q in ([fb] if fb else []) + pool:
@@ -229,7 +263,7 @@ def _finish(st: AppState, s: Session, answers) -> dict:
     except Exception:  # any printer fault (USB, OSError) must not lose the name
         log.exception("print failed for %s", display)
         printed = False
-    st.recent_badges.append((name_id, display, tagline, first_burn))
+    st.recent_badges.append((uuid.uuid4().hex, name_id, display, tagline, first_burn))
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,

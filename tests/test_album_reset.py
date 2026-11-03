@@ -49,5 +49,5 @@ def test_yes_empties_album(tmp_path):
     assert album.entries() == []
     page = s3.objects["album/s3cr3t/index.html"]
     assert page["ContentType"].startswith("text/html") and b"No photos yet" in page["Body"]
-    assert b"This photo was deleted." in s3.objects["p/t1"]["Body"]
+    assert b"This photo has been deleted." in s3.objects["p/t1"]["Body"]
     assert "tmp/t3/original.jpg" in s3.objects  # unshared photos untouched

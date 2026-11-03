@@ -5,12 +5,11 @@ import re
 from io import BytesIO
 from urllib.parse import quote, urlparse
 
-from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request
+from flask import Blueprint, Response, abort, current_app, jsonify, make_response, redirect, render_template, request
 
 from app.badge import render_badge
 from app.config import PROVIDERS
 from app.content import KINDS, STATUSES, ContentError, append_entry, set_status
-from app.printer import PrintError
 from app.transform import get_provider
 
 log = logging.getLogger(__name__)
@@ -53,11 +52,18 @@ def _write(fn):
 
 
 def _body():
-    return request.get_json(silent=True) or request.form
+    """The JSON object (or form) a POST sent; any other JSON is a 400."""
+    if not request.is_json:
+        return request.form
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        abort(make_response(jsonify(error="body must be a JSON object"), 400))
+    return d
 
 
-def _banner(st):
-    return SAMPLE_BANNER if st.cfg.content_is_sample else None
+@bp.get("/")
+def slash():
+    return redirect("/admin")
 
 
 @bp.get("")
@@ -67,9 +73,9 @@ def dashboard():
     return render_template(
         "admin.html", page="dashboard", st=st, by_kind=by_kind, remaining=st.names.remaining(),
         by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
-        providers=sorted(PROVIDERS), recent=list(enumerate(st.recent_badges))[::-1],
+        providers=sorted(PROVIDERS), recent=list(st.recent_badges)[::-1],
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
-        sample_banner=_banner(st), msg=request.args.get("msg"))
+        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
 
 
 @bp.get("/review")
@@ -85,14 +91,25 @@ def review():
     return render_template(
         "admin.html", page="review", st=st, kind=kind, status=status, tag=tag, rows=rows,
         all_tags=sorted({t for n in st.content.names for t in n.tags}), statuses=sorted(STATUSES),
-        needs_owner=bool(a.get("needs_owner")), msg=a.get("msg"), sample_banner=_banner(st))
+        needs_owner=bool(a.get("needs_owner")), msg=a.get("msg"),
+        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER)
 
 
 @bp.post("/status")
 def status():
     d = _body()
     st = _st()
-    err = _write(lambda: set_status(st.cfg.content_dir, d.get("kind"), d.get("id"), d.get("status")))
+    err = _write(lambda: set_status(st.cfg.content_dir, d.get("kind"), [d.get("id")], d.get("status")))
+    return (jsonify(error=err), 400) if err else jsonify(ok=True)
+
+
+@bp.post("/status-bulk")
+def status_bulk():
+    d, st = _body(), _st()
+    ids = d.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        return jsonify(error="ids must be a list of strings"), 400
+    err = _write(lambda: set_status(st.cfg.content_dir, d.get("kind"), ids, d.get("status")))
     return (jsonify(error=err), 400) if err else jsonify(ok=True)
 
 
@@ -156,19 +173,19 @@ def preview(name_id):
 def _print(img):
     try:
         _st().printer(img)
-    except PrintError as e:
+    except Exception as e:  # any printer fault (PrintError, USB OSError) is a JSON error, never a 500
         log.exception("admin print failed")
-        return jsonify(error=str(e)), 502
+        return jsonify(error=str(e) or type(e).__name__), 502
     return jsonify(ok=True)
 
 
 @bp.post("/reprint")
 def reprint():
-    d = _body()
-    try:
-        _, display, tagline, first_burn = list(_st().recent_badges)[int(d["index"])]
-    except (KeyError, ValueError, IndexError, TypeError):
-        return jsonify(error="no such badge"), 400
+    id_ = _body().get("id")
+    badge = next((b for b in list(_st().recent_badges) if b[0] == id_), None)
+    if badge is None:
+        return jsonify(error="no such badge"), 404
+    _, _, display, tagline, first_burn = badge
     return _print(render_badge(display, tagline, first_burn))
 
 

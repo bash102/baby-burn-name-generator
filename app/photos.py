@@ -14,6 +14,7 @@ from urllib.parse import urljoin
 log = logging.getLogger(__name__)
 
 IMAGES = ("original", "dusty")
+ALBUM_CHAIN = "album"  # CloudPhotos chain key for album-page writes; tokens are 22 chars, never this
 HTML = "text/html; charset=utf-8"
 
 
@@ -52,8 +53,13 @@ class PhotoStore:
             if src.exists():
                 shutil.copyfile(src, self.album_dir / f"{name_id}-{token}-{kind}.jpg")
 
-    def delete(self, token: str) -> None:
+    def discard(self, token: str) -> None:
+        """Session end: drop the session copies; album backups stay."""
         shutil.rmtree(self._dir(token), ignore_errors=True)
+
+    def delete(self, token: str) -> None:
+        """The guest chose delete: session copies and album backups."""
+        self.discard(token)
         for f in self.album_dir.glob(f"*-{token}-*.jpg"):
             f.unlink(missing_ok=True)
 
@@ -115,7 +121,7 @@ _GONE_JS = """
 const EXP = new Date(%(exp)s);
 function gone() {
   const p = document.getElementById("photos");
-  if (p) p.outerHTML = "<p class=status>This photo self-destructed.</p>";
+  if (p) p.outerHTML = "<p class=status>This photo has been deleted.</p>";
 }
 document.querySelectorAll("#photos img").forEach(i => i.addEventListener("error", () => {
   if (Date.now() > EXP) gone();
@@ -126,10 +132,10 @@ const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
 const when = EXP.toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"});
 function tick() {
   const ms = EXP - Date.now(), el = document.getElementById("status");
-  el.textContent = ms > 0
-    ? "This photo self-destructs in " + plural(Math.floor(ms / 864e5), "day") + ", "
-      + plural(Math.floor(ms % 864e5 / 36e5), "hour") + ", on or after " + when
-    : "This photo self-destructs any moment now (on or after " + when + ")";
+  el.textContent = ms >= 36e5
+    ? "This photo will be deleted on " + when + " (in " + plural(Math.floor(ms / 864e5), "day") + ", "
+      + plural(Math.floor(ms % 864e5 / 36e5), "hour") + "). Download it before then."
+    : "This photo is about to be deleted. Download it now if you want it.";
 }
 tick(); setInterval(tick, 60000);
 """
@@ -143,25 +149,33 @@ probe.onload = () => {
 probe.onerror = () => {
   if (Date.now() > EXP) return gone();
   if (++tries < 40) setTimeout(() => { probe.src = DUSTY + "?t=" + Date.now(); }, 3000);
-  else document.getElementById("developing").textContent = "The dusty baby didn't make it. Your original is below.";
+  else document.getElementById("developing").textContent = "Your dusty baby didn't develop. Your original is below.";
 };
 probe.src = DUSTY;
 """
 
 
+def _countdown(exp: datetime, now: datetime) -> str:
+    left = exp - now
+    if left < timedelta(hours=1):
+        return "This photo is about to be deleted. Download it now if you want it."
+    return (f"This photo will be deleted on {_short_date(exp)} (in {_plural(left.days, 'day')}, "
+            f"{_plural(left.seconds // 3600, 'hour')}). Download it before then.")
+
+
 def render_photo_page(token: str, *, state: Literal["temp", "album", "deleted"], has_dusty: bool,
-                      uploaded_at: datetime, retention_days: int = 14, album_url: str) -> str:
+                      uploaded_at: datetime, retention_days: int = 14, album_url: str,
+                      now: datetime | None = None) -> str:
     """Self-contained mobile page at p/<token>: deletion status first, then the images."""
     album_link = f"<p><a href='{html.escape(album_url)}'>See the Baby Burn album</a></p>"
     if state == "deleted":
-        return _doc("Baby Burn photo", f"<p class=status>This photo was deleted.</p>{album_link}")
+        return _doc("Baby Burn photo", f"<p class=status>This photo has been deleted.</p>{album_link}")
     if state == "album":
-        status, exp = "Shared to the Baby Burn album. No expiry.", None
+        status, exp = "This photo is in the Baby Burn album and stays there.", None
         src = {k: urljoin(album_url, f"{token}/{k}.jpg") for k in IMAGES}
     else:
         exp = uploaded_at + timedelta(days=retention_days)
-        status = (f"This photo self-destructs in {_plural(retention_days, 'day')}, 0 hours, "
-                  f"on or after {_short_date(exp)}")
+        status = _countdown(exp, now or _now())
         src = {k: f"../tmp/{token}/{k}.jpg" for k in IMAGES}
     src = {k: html.escape(v) for k, v in src.items()}
     dusty = (f"<img src='{src['dusty']}' alt='Your dusty baby'>"
@@ -265,23 +279,42 @@ class CloudPhotos:
     def album_url(self) -> str:
         return f"{self.base_url}/{album_page_key(self.secret)}"
 
-    def _run(self, token: str, fn) -> Future:
+    def _chain(self, key: str, fn) -> Future:
+        """Run fn after the previous op on `key`; the chain entry is dropped once its last op finishes."""
+        me: list[Future] = []
+
         def task():
             if prev:
                 wait([prev])
             try:
-                fn(self._st.setdefault(token, {"state": "temp", "uploaded_at": self.now(),
-                                               "original": False, "dusty": False}))
+                return fn()
             except Exception:
                 with self._lock:
                     self.errors += 1
-                log.exception("cloud op failed for %s", token[:6] + "…")
+                log.exception("cloud op failed for %s", key[:6] + "…")
                 raise
+            finally:
+                with self._lock:  # _chain holds the lock until `me` is set
+                    if self._last.get(key) is me[0]:
+                        del self._last[key]
 
         with self._lock:
-            prev = self._last.get(token)
-            fut = self._last[token] = self.executor.submit(task)
+            prev = self._last.get(key)
+            fut = self._last[key] = self.executor.submit(task)
+            me.append(fut)
         return fut
+
+    def _run(self, token: str, fn) -> Future:
+        # ponytail: _st is kept for the process lifetime (one small dict per guest); pruning it when the
+        # chain drains would forget "album"/"deleted" before a late dusty upload arrives.
+        return self._chain(token, lambda: fn(self._st.setdefault(
+            token, {"state": "temp", "uploaded_at": self.now(), "original": False, "dusty": False})))
+
+    def _refresh_album(self) -> None:
+        """Re-put the album page on its own chain, so writes are serialized and the last one reads
+        AlbumIndex after every change that queued it."""
+        self._chain(ALBUM_CHAIN, lambda: put_album_page(self.client, self.bucket, self.base_url, self.secret,
+                                                         self.album.entries()))
 
     def drain(self) -> None:
         """Wait for every queued op (tests, shutdown)."""
@@ -298,11 +331,8 @@ class CloudPhotos:
 
     def _put_page(self, token: str, st: dict) -> None:
         page = render_photo_page(token, state=st["state"], has_dusty=st["dusty"], uploaded_at=st["uploaded_at"],
-                                 retention_days=self.retention_days, album_url=self.album_url())
+                                 retention_days=self.retention_days, album_url=self.album_url(), now=self.now())
         put_html(self.client, self.bucket, f"p/{token}", page)
-
-    def _put_album_page(self) -> None:
-        put_album_page(self.client, self.bucket, self.base_url, self.secret, self.album.entries())
 
     def upload(self, token: str, *, original: bytes | None = None, dusty: bytes | None = None) -> Future:
         def op(st):
@@ -321,9 +351,10 @@ class CloudPhotos:
         return self._run(token, op)
 
     def share(self, token: str, playa_name: str) -> Future:
+        """Future[bool]: True once shared (or already shared), False if the photo was deleted."""
         def op(st):
             if st["state"] != "temp":
-                return
+                return st["state"] == "album"
             tmp = [self._key(token, st, k) for k in IMAGES if st[k]]
             for src in tmp:
                 self.client.copy_object(Bucket=self.bucket, Key=f"album/{self.secret}/{src[4:]}",
@@ -331,9 +362,10 @@ class CloudPhotos:
             st["state"] = "album"
             self.album.add(token, playa_name)
             self._put_page(token, st)
-            self._put_album_page()
+            self._refresh_album()
             if tmp:
                 delete_keys(self.client, self.bucket, tmp)
+            return True
 
         return self._run(token, op)
 
@@ -344,6 +376,6 @@ class CloudPhotos:
             delete_keys(self.client, self.bucket, keys)
             self.album.remove(token)
             self._put_page(token, st)
-            self._put_album_page()
+            self._refresh_album()
 
         return self._run(token, op)

@@ -133,12 +133,65 @@ def test_reprint(k, tmp_path):
 
     k.state.printer = jammed
     k.finish(k.session())  # printing fails but the badge is recorded
-    assert len(k.state.recent_badges) == 1
-    assert post(k, "/admin/reprint", json={"index": 0}).status_code == 502
+    k.finish(k.session())
+    first, second = (b[0] for b in k.state.recent_badges)
+    assert first != second
+    assert f'{{&#34;id&#34;: &#34;{first}&#34;}}' in k.c.get("/admin", headers=AUTH).data.decode()
+    assert post(k, "/admin/reprint", json={"id": first}).status_code == 502
     out = tmp_path / "reprints"
     k.state.printer = make_printer("file", out)
-    assert post(k, "/admin/reprint", json={"index": 0}).status_code == 200
+    assert post(k, "/admin/reprint", json={"id": first}).status_code == 200
     (png,) = out.glob("*.png")
     assert Image.open(png).size == (954, 672)
-    assert post(k, "/admin/reprint", json={"index": 9}).status_code == 400
+    for bad in ({"id": "nope"}, {"index": 0}, {}):
+        r = post(k, "/admin/reprint", json=bad)
+        assert r.status_code == 404 and r.get_json()["error"]
     assert post(k, "/admin/test-print").status_code == 200 and len(list(out.glob("*.png"))) == 2
+
+
+def test_print_any_exception_is_json(k):
+    def unplugged(img):
+        raise OSError("usb gone")
+
+    k.state.printer = unplugged
+    r = post(k, "/admin/test-print")
+    assert r.status_code == 502 and "usb gone" in r.get_json()["error"]
+
+
+def test_status_bulk(k, monkeypatch):
+    reloads = []
+    real = k.state.reload_content
+    monkeypatch.setattr(k.state, "reload_content", lambda: reloads.append(1) or real())
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "d2"], "status": "approved"})
+    assert r.status_code == 200 and r.get_json() == {"ok": True} and len(reloads) == 1
+    assert {"d1", "d2"} <= {n.id for n in k.state.names._pool}
+
+
+def test_status_bulk_bad_id_writes_nothing(k):
+    path = k.cfg.content_dir / "names.yaml"
+    before = path.read_bytes()
+    r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "nope"], "status": "approved"})
+    assert r.status_code == 400 and "nope" in r.get_json()["error"]
+    assert path.read_bytes() == before
+    for bad in ({"kind": "names", "ids": "d1", "status": "approved"},
+                {"kind": "names", "ids": [["d1"]], "status": "approved"}):
+        assert post(k, "/admin/status-bulk", json=bad).status_code == 400
+    assert path.read_bytes() == before
+
+
+def test_non_dict_json_body_is_400(k):
+    for url in ("/admin/status", "/admin/status-bulk", "/admin/provider", "/admin/reprint"):
+        r = post(k, url, json=[1, 2])
+        assert r.status_code == 400 and r.get_json()["error"], url
+
+
+def test_admin_trailing_slash_redirects(k):
+    r = k.c.get("/admin/", headers=AUTH)
+    assert r.status_code in (301, 302, 308) and r.headers["Location"].endswith("/admin")
+
+
+def test_review_copy(k):
+    html = k.c.get("/admin/review?kind=names&status=draft", headers=AUTH).data.decode()
+    assert "needs your review</label>" in html and "Needs your review: check" in html
+    assert "needs owner" not in html.lower()
+    assert "(resets to the .env value on restart)" in k.c.get("/admin", headers=AUTH).data.decode()

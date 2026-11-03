@@ -71,10 +71,14 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 
 ## 8. Review content on your Mac
 
-The admin pages need `ADMIN_PIN` (empty or `change-me` disables them) and refuse edits while the public sample content is loaded. Point at your private content clone:
+Run the kiosk locally against your private content repo, so edits land there and not in the public sample content:
 
 ```
 CONTENT_DIR=<path to private content clone> ADMIN_PIN=<pin> uv run --env-file .env python -m app.web --dev
 ```
 
-Then open http://127.0.0.1:8000/admin/review (any username, the PIN as password). Approve/Reject write straight into the clone YAML files; commit them there when you are done.
+`ADMIN_PIN` is any PIN you choose (not empty or `change-me`; those disable the admin pages). `--dev` serves plain HTTP on http://127.0.0.1:8000. Open http://127.0.0.1:8000/admin/review and sign in with any username and the PIN as the password.
+
+On the Pi, use a strong `ADMIN_PIN`: anyone on the party Wi-Fi can reach `/admin`.
+
+Approve and Reject edit the YAML files in your clone. Commit them there when you finish.
