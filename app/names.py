@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from app.content import RESERVED_NAME_PREFIX
+
 
 class NameStore:
     def __init__(self, db_path: Path):
@@ -23,8 +25,8 @@ class NameStore:
 
     def set_pool(self, names: Sequence) -> None:
         names = list(names)
-        if bad := [n.id for n in names if n.id.startswith("stranger-")]:
-            raise ValueError(f"pool ids may not start with 'stranger-' (reserved for fallbacks): {bad}")
+        if bad := [n.id for n in names if n.id.startswith(RESERVED_NAME_PREFIX)]:
+            raise ValueError(f"pool ids may not start with {RESERVED_NAME_PREFIX!r} (reserved for fallbacks): {bad}")
         with self._lock:
             self._pool = names
 
@@ -41,9 +43,9 @@ class NameStore:
                 name_id, display = choice.id, choice.name
             else:
                 n = self._db.execute(
-                    "SELECT COUNT(*) FROM used WHERE name_id LIKE 'stranger-%'"
+                    "SELECT COUNT(*) FROM used WHERE name_id LIKE ?", (RESERVED_NAME_PREFIX + "%",)
                 ).fetchone()[0] + 1
-                name_id, display = f"stranger-{n}", f"Dusty Stranger #{n}"
+                name_id, display = f"{RESERVED_NAME_PREFIX}{n}", f"Dusty Stranger #{n}"
             self._db.execute(
                 "INSERT INTO used(name_id, display, given_at) VALUES (?,?,?)",
                 (name_id, display, datetime.now(timezone.utc).isoformat()),

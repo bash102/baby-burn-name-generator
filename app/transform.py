@@ -14,7 +14,7 @@ DUSTY_PROMPT = (
     "Turn the person in this photo into a playful, adorable dusty BABY version of themselves: "
     "a cute baby Burning Man burner, covered in a light layer of playa dust, wearing goggles and "
     "the same costume, hat and accessories they are wearing in the photo. Keep their face clearly "
-    "recognizable (same hair colour, skin tone, expression and features) with soft chubby baby "
+    "recognizable (same hair color, skin tone, expression and features) with soft chubby baby "
     "proportions. Warm golden sunset desert light, dreamy and joyful. Cute and kind, never creepy "
     "or scary. Family friendly: no drugs, nothing sexual. Keep the same framing as the photo."
 )
@@ -32,17 +32,14 @@ class Provider(Protocol):
 
 def parse_tags(text: str, vocab: Collection[str]) -> set[str]:
     """Accept a JSON array or comma list; keep only vocab members. Never raises."""
+    text = (text or "").strip()  # SDKs return None for empty/blocked replies
     try:
-        text = text.strip()
-        try:
-            data = json.loads(text)
-            items = data if isinstance(data, list) else []
-        except ValueError:
-            items = re.split(r"[,\n]", text)
-        allowed = {v.lower() for v in vocab}
-        return {s for s in (str(i).strip().strip("\"'[]").lower() for i in items) if s in allowed}
-    except Exception:
-        return set()
+        data = json.loads(text)
+        items = data if isinstance(data, list) else []
+    except ValueError:
+        items = re.split(r"[,\n]", text)
+    allowed = {v.lower() for v in vocab}
+    return {s for s in (str(i).strip().strip("\"'[]").lower() for i in items) if s in allowed}
 
 
 def _to_jpeg(data: bytes, max_side: int = 1280, quality: int = 85) -> bytes:

@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from app.content import BANNED_WORDS, ContentError, append_entry, load_content, set_status
+from app.content import BANNED_WORDS, ContentError, append_entry, load_content, main, set_status
 
 
 def _read(d, kind):
@@ -21,6 +21,7 @@ def test_loads_sample(sample_content_dir):
     assert len(c.names) == 20
     assert c.first_burn_question.id == "first_burn"
     assert c.first_burn_question not in c.approved_questions
+    assert c.warnings == []
     assert {"dust", "gnome"} <= c.tag_vocab
     assert len(c.approved_taglines) == 5
 
@@ -62,12 +63,68 @@ def test_first_burn_exempt_from_correct(sample_content_dir):
     assert load_content(sample_content_dir).first_burn_question.fixed == "first_burn"
 
 
-def test_option_tags_must_be_in_vocab(sample_content_dir):
+def test_option_tag_not_in_vocab_is_a_warning(sample_content_dir, capsys):
     qs = _read(sample_content_dir, "questions")
     qs[1]["options"][0]["tags"] = ["zzz"]
     _write(sample_content_dir, "questions", qs)
-    with pytest.raises(ContentError, match="zzz"):
+    c = load_content(sample_content_dir)
+    assert any("zzz" in w for w in c.warnings)
+    # editing must not fail on it either
+    set_status(sample_content_dir, "names", "dusty-bottom", "draft")
+    append_entry(sample_content_dir, "names", _name("w1", "Warn Me"))
+    assert main(["x", str(sample_content_dir)]) == 0
+    assert "zzz" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("kind,limit,mk", [
+    ("names", 40, lambda t: _name("cap", t)),
+    ("taglines", 32, lambda t: {"id": "cap", "text": t, "status": "draft"}),
+])
+def test_text_length_caps(sample_content_dir, kind, limit, mk):
+    append_entry(sample_content_dir, kind, mk("x" * limit))
+    with pytest.raises(ContentError, match="at most"):
+        append_entry(sample_content_dir, kind, {**mk("y" * (limit + 1)), "id": "cap2"})
+
+
+def test_option_and_quip_length_caps(sample_content_dir):
+    orig = _read(sample_content_dir, "questions")
+    for field, limit in (("option", 45), ("quip", 60)):
+        qs = _read(sample_content_dir, "questions")
+        q = next(q for q in qs if q["id"] == "margarita")
+        for n, ok in ((limit, True), (limit + 1, False)):
+            if field == "option":
+                q["options"][0]["text"] = "x" * n
+            else:
+                q["quip"] = "x" * n
+            _write(sample_content_dir, "questions", qs)
+            if ok:
+                load_content(sample_content_dir)
+            else:
+                with pytest.raises(ContentError, match="at most"):
+                    load_content(sample_content_dir)
+                _write(sample_content_dir, "questions", orig)
+
+
+@pytest.mark.parametrize("bad", ["yes", "true", "2.5"])
+def test_first_burn_must_be_int_not_bool(sample_content_dir, bad):
+    p = sample_content_dir / "questions.yaml"
+    p.write_text(p.read_text().replace("first_burn: 2}", f"first_burn: {bad}}}"), encoding="utf-8")
+    with pytest.raises(ContentError, match="first_burn must be an integer"):
         load_content(sample_content_dir)
+
+
+def test_first_burn_question_none_unless_approved(sample_content_dir):
+    qs = _read(sample_content_dir, "questions")
+    next(q for q in qs if q.get("fixed")) ["status"] = "draft"
+    _write(sample_content_dir, "questions", qs)
+    assert load_content(sample_content_dir).first_burn_question is None
+
+
+def test_concurrent_appends_do_not_lose_entries(sample_content_dir):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda i: append_entry(sample_content_dir, "names", _name(f"c{i}", f"Concurrent {i}")), range(16)))
+    assert len(load_content(sample_content_dir).names) == 20 + 16
 
 
 def test_banned_word_in_approved_rejected(sample_content_dir):

@@ -12,6 +12,7 @@ TEXT_FONT = FONT_DIR / "Lato-Bold.ttf"
 
 W, H = 954, 672
 DPI = 300
+FIRST_BURN_PT = 12
 FRAME_PX = 30  # border art lives in this outer band
 MARGIN_PX = 50
 NAME_MAX_PT, NAME_MIN_PT, NAME_MAX_LINES = 60, 8, 2  # 8 pt is the hard floor: shrink, never clip
@@ -77,8 +78,18 @@ def _wrap(text: str, font, width: int) -> list[str]:
     return lines + [cur] if cur else lines
 
 
+def _truncate(lines, font, width, max_lines):
+    """Keep max_lines lines; if any were dropped, end the last with an ellipsis that still fits."""
+    if len(lines) <= max_lines:
+        return lines
+    last = lines[max_lines - 1].rstrip()
+    while last and font.getlength(last + "…") > width:
+        last = last[:-1].rstrip()
+    return lines[:max_lines - 1] + [last + "…"]
+
+
 def _fit(text, path, lo, hi, box, max_lines):
-    """Largest pt in [lo, hi] whose wrapped text fits box (binary search; falls back to lo)."""
+    """Largest pt in [lo, hi] whose wrapped text fits box (binary search). At lo it truncates with an ellipsis."""
     bw, bh = box[2] - box[0], box[3] - box[1]
 
     def lines_if_fits(pt):
@@ -87,7 +98,9 @@ def _fit(text, path, lo, hi, box, max_lines):
         ok = len(lines) <= max_lines and len(lines) * line_height(font) <= bh
         return lines if ok else None
 
-    best = (lo, _wrap(text, _font(path, lo), bw))
+    floor_font = _font(path, lo)
+    rows = min(max_lines, max(1, bh // line_height(floor_font)))
+    best = (lo, _truncate(_wrap(text, floor_font, bw), floor_font, bw, rows))
     while lo <= hi:
         mid = (lo + hi) // 2
         lines = lines_if_fits(mid)
@@ -96,6 +109,18 @@ def _fit(text, path, lo, hi, box, max_lines):
         else:
             hi = mid - 1
     return best
+
+
+def first_burn_text(first_burn: int) -> str:
+    return f"First Burn: Baby Burn {first_burn}"
+
+
+def tagline_bottom(first_burn: int | None) -> int:
+    """Bottom edge of the tagline box: clear of the First Burn line's ink, if there is one."""
+    if first_burn is None:
+        return H - MARGIN_PX
+    top = H - MARGIN_PX + _font(TEXT_FONT, FIRST_BURN_PT).getbbox(first_burn_text(first_burn), anchor="ms")[1]
+    return top - 10
 
 
 def fit_name(name: str) -> tuple[int, list[str]]:
@@ -115,7 +140,7 @@ def _centered_lines(d, lines, font, box, y=None):
         y += lh
 
 
-def _draw_qr(img, d, url):
+def _draw_qr(d, url):
     qr = segno.make(url, error="m", micro=False)
     quiet = 2
     n = qr.symbol_size(border=0)[0]
@@ -177,23 +202,23 @@ def render_badge(name: str, tagline: str, first_burn: int | None, qr_url: str | 
     # tagline + first-burn live left of the QR (full width without one)
     right = QR_BOX[0] - 20 if qr_url else W - MARGIN_PX
     gap = 15
-    tag_box = (MARGIN_PX, NAME_BOX[3] + gap, right, H - MARGIN_PX - (24 if first_burn is not None else 0))
+    tag_box = (MARGIN_PX, NAME_BOX[3] + gap, right, tagline_bottom(first_burn))
     pt, lines = fit_name(name)
     tcap = tagline_max_pt(pt)
     tpt, tlines = _fit(tagline, TEXT_FONT, min(TAGLINE_MIN_PT, tcap), tcap, tag_box, 3)
     nfont, tfont = name_font(pt), _font(TEXT_FONT, tpt)
     nh, th = line_height(nfont) * len(lines), line_height(tfont) * len(tlines)
 
-    # centre name+tagline vertically above the first-burn line; with a QR the name stops above it
+    # center name+tagline vertically above the first-burn line; with a QR the name stops above it
     group = nh + (gap + th if tlines else 0)
     y = MARGIN_PX + (tag_box[3] - MARGIN_PX - group) / 2
     y = max(MARGIN_PX, min(y, QR_BOX[1] - nh) if qr_url else y)
     _centered_lines(d, lines, nfont, NAME_BOX, y)
     _centered_lines(d, tlines, tfont, tag_box, y + nh + gap)
     if first_burn is not None:
-        d.text(((MARGIN_PX + right) / 2, H - MARGIN_PX), f"First Burn: Baby Burn {first_burn}",
-               font=_font(TEXT_FONT, 12), fill=0, anchor="ms")
+        d.text(((MARGIN_PX + right) / 2, H - MARGIN_PX), first_burn_text(first_burn),
+               font=_font(TEXT_FONT, FIRST_BURN_PT), fill=0, anchor="ms")
 
     if qr_url:
-        _draw_qr(img, d, qr_url)
+        _draw_qr(d, qr_url)
     return img.convert("1", dither=Image.Dither.NONE)

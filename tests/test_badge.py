@@ -128,3 +128,47 @@ def test_tagline_capped_below_name(name):
     assert cap < pt
     assert cap <= badge.TAGLINE_NAME_RATIO * pt
     assert cap <= badge.TAGLINE_MAX_PT
+
+
+def box_ink(img, bare, box):
+    return ink_bbox(img.crop(box), bare.crop(box))
+
+
+@pytest.mark.parametrize("qr", [None, QR])
+@pytest.mark.parametrize("tagline", ["Radically self-reliant (mostly)", "W" * 32, "Q" * 60])
+@pytest.mark.parametrize("name", ["Gnome", LONG, "W" * 40])
+def test_tagline_clears_first_burn_line(name, tagline, qr):
+    bare = render(name="", tagline="", first_burn=2, qr_url=qr)
+    nothing = render(name="", tagline="", first_burn=None, qr_url=qr)
+    fb = ink_bbox(bare, nothing)
+    assert fb
+    zone = (fb[0], fb[1] - 8, fb[2], fb[3])  # first-burn ink plus an 8 px clearance above it
+    img = render(name=name, tagline=tagline, first_burn=2, qr_url=qr)
+    assert box_ink(img, bare, zone) is None
+
+
+def test_overlong_text_is_truncated_inside_its_boxes():
+    name, tagline = "W" * 80, "Q" * 60
+    bare = render(name="", tagline="", first_burn=None, qr_url=QR)
+    img = render(name=name, tagline=tagline, first_burn=None, qr_url=QR)
+    x0, y0, x1, y1 = NAME_BOX
+    right = badge.QR_BOX[0] - 20
+    # nothing drawn outside the union of the name box and the tagline box (left of the QR)
+    tag_bottom = badge.H - badge.MARGIN_PX
+    for outside in [(0, 0, badge.W, y0), (0, 0, x0, badge.H), (x1, 0, badge.W, badge.H - 1),
+                    (right, y1, badge.QR_BOX[0], tag_bottom)]:
+        outside = tuple(max(0, v) for v in outside)
+        # frame band excluded: compare only the interior
+        inner = (max(outside[0], 30), max(outside[1], 30), min(outside[2], badge.W - 30), min(outside[3], badge.H - 30))
+        if inner[0] < inner[2] and inner[1] < inner[3]:
+            assert box_ink(img, bare, inner) is None, inner
+    pt, lines = fit_name(name)
+    assert len(lines) <= badge.NAME_MAX_LINES and lines[-1].endswith("…")
+
+
+def test_tagline_box_bottom_clears_first_burn_ink():
+    font = badge._font(badge.TEXT_FONT, badge.FIRST_BURN_PT)
+    text = badge.first_burn_text(2)
+    ink_top = badge.H - badge.MARGIN_PX + font.getbbox(text, anchor="ms")[1]
+    assert badge.tagline_bottom(2) < ink_top
+    assert badge.tagline_bottom(None) == badge.H - badge.MARGIN_PX
