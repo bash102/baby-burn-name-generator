@@ -1,3 +1,4 @@
+import html
 import io
 import re
 import threading
@@ -8,7 +9,7 @@ from PIL import Image
 
 import app.web as web
 from app.config import Config
-from app.content import append_entry
+from app.content import append_entry, set_status
 from app.photos import MemoryS3, render_photo_page
 from app.printer import PrintError
 from app.transform import FakeProvider
@@ -209,7 +210,7 @@ def test_choice_album_moves_to_album_prefix(k):
     assert f"album/{SECRET}/{tok}/dusty.jpg" in k.keys()
     assert not [x for x in k.keys() if x.startswith(f"tmp/{tok}/")]
     assert "No expiry" in k.page(tok) and "self-destructs in" not in k.page(tok)
-    assert r["name"] in k.album_page() and tok in k.album_page()
+    assert html.escape(r["name"]) in k.album_page() and tok in k.album_page()
     assert f"<a href='{BASE}/album/{SECRET}/{tok}/original.jpg'><img src='{BASE}/album/{SECRET}/{tok}/dusty.jpg'" \
         in k.album_page()  # grid shows dusty, tap for original
     assert list((k.cfg.data_dir / "album").glob(f"*{tok}*original.jpg"))
@@ -240,7 +241,7 @@ def test_choice_delete_removes_everywhere(k):
     k.choose(sid, "delete")
     k.drain()
     assert k.keys(tok) == {f"p/{tok}"}
-    assert r["name"] not in k.album_page() and tok not in k.album_page()
+    assert html.escape(r["name"]) not in k.album_page() and tok not in k.album_page()
     assert "This photo was deleted." in k.page(tok) and ".jpg" not in k.page(tok)
     assert not (k.cfg.data_dir / "photos" / tok).exists()
 
@@ -394,3 +395,88 @@ def test_kiosk_page_served(k):
     assert k.c.get("/kiosk.html").status_code == 200
     assert k.c.get("/kiosk.js").status_code == 200
     assert k.c.get("/").status_code in (200, 302)
+
+
+def _draft_first_burn(tmp_path, sample_content_dir):
+    set_status(sample_content_dir, "questions", "first_burn", "draft")
+    return Kiosk(tmp_path, sample_content_dir)
+
+
+def test_quiz_without_approved_first_burn(tmp_path, sample_content_dir):
+    k = _draft_first_burn(tmp_path, sample_content_dir)
+    r = k.c.get("/api/quiz")
+    qs = r.get_json()["questions"]
+    assert r.status_code == 200 and "first_burn" not in {q["id"] for q in qs}
+    assert len(qs) == k.cfg.quiz_random_count
+
+
+def test_finish_ignores_unserved_questions(tmp_path, sample_content_dir):
+    k = _draft_first_burn(tmp_path, sample_content_dir)
+    r = k.finish(k.session(photo=False), [{"question_id": "first_burn", "option_ids": ["bb2"]}])
+    assert r["first_burn_label"] is None
+
+
+def test_finish_ignores_draft_random_question_tags(tmp_path, sample_content_dir):
+    append_entry(sample_content_dir, "questions", {
+        "id": "secret-draft", "type": "single", "prompt": "Draft?", "status": "draft",
+        "options": [{"id": "a", "text": "yes", "correct": True, "first_burn": 9}, {"id": "b", "text": "no"}]})
+    k = Kiosk(tmp_path, sample_content_dir)
+    r = k.finish(k.session(photo=False), [{"question_id": "secret-draft", "option_ids": ["a"]}])
+    assert r["first_burn_label"] is None
+
+
+def test_printer_any_exception_keeps_name_and_caches(tmp_path, sample_content_dir):
+    def broken(img):
+        raise OSError("usb gone")
+
+    k = Kiosk(tmp_path, sample_content_dir, printer=broken)
+    sid = k.session(photo=False)
+    r = k.finish(sid)
+    assert r["printed"] is False and r["name"]
+    assert k.finish(sid) == r
+
+
+def test_dusty_hook_failure_does_not_fail_transform(k, monkeypatch):
+    def boom(token, jpeg):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(k.state.photos, "save_dusty", boom)
+    sid = k.session()
+    k.drain()
+    assert k.c.get(f"/api/session/{sid}/photo").mimetype == "image/jpeg"
+
+
+class FlakyDelete(MemoryS3):
+    broken = True
+
+    def delete_objects(self, **kw):
+        if self.broken:
+            raise ConnectionError("offline")
+        super().delete_objects(**kw)
+
+
+def test_delete_reports_cloud_failure_then_succeeds_on_retry(tmp_path, sample_content_dir):
+    s3 = FlakyDelete()
+    k = Kiosk(tmp_path, sample_content_dir, s3=s3)
+    sid = k.session()
+    k.drain()
+    tok = k.sess(sid).token
+    r = k.c.post(f"/api/session/{sid}/photo-choice", json={"choice": "delete"})
+    assert r.status_code == 502 and r.get_json() == {"ok": False}
+    assert not (k.cfg.data_dir / "photos" / tok).exists()  # local copies are gone regardless
+    assert any(key.startswith("tmp/") for key in k.keys(tok))
+    s3.broken = False
+    r = k.c.post(f"/api/session/{sid}/photo-choice", json={"choice": "delete"})
+    assert r.status_code == 200 and r.get_json() == {"ok": True}
+    assert k.keys(tok) == {f"p/{tok}"}
+
+
+def test_photo_store_delete_removes_album_backups(tmp_path):
+    from app.photos import PhotoStore
+    ps = PhotoStore(tmp_path)
+    ps.save_original("tok1", b"x")
+    ps.save_original("tok2", b"y")
+    ps.copy_to_album_backup("tok1", "n1")
+    ps.copy_to_album_backup("tok2", "n2")
+    ps.delete("tok1")
+    assert [p.name for p in ps.album_dir.iterdir()] == ["n2-tok2-original.jpg"]

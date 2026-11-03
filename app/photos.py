@@ -54,6 +54,8 @@ class PhotoStore:
 
     def delete(self, token: str) -> None:
         shutil.rmtree(self._dir(token), ignore_errors=True)
+        for f in self.album_dir.glob(f"*-{token}-*.jpg"):
+            f.unlink(missing_ok=True)
 
 
 class AlbumIndex:
@@ -201,7 +203,8 @@ def make_s3_client(cfg):
     return boto3.client(
         "s3", endpoint_url=cfg.s3_endpoint_url, region_name=cfg.s3_region,
         aws_access_key_id=cfg.s3_access_key_id, aws_secret_access_key=cfg.s3_secret_access_key,
-        config=BotoConfig(retries={"mode": "standard", "max_attempts": 5}),
+        config=BotoConfig(retries={"mode": "standard", "max_attempts": 5},
+                           connect_timeout=5, read_timeout=15),
     )
 
 
@@ -267,7 +270,7 @@ class CloudPhotos:
             except Exception:
                 with self._lock:
                     self.errors += 1
-                log.exception("cloud op failed for %s", token)
+                log.exception("cloud op failed for %s", token[:6] + "…")
                 raise
 
         with self._lock:
@@ -277,7 +280,11 @@ class CloudPhotos:
 
     def drain(self) -> None:
         """Wait for every queued op (tests, shutdown)."""
-        while futs := [f for f in list(self._last.values()) if not f.done()]:
+        while True:
+            with self._lock:
+                futs = [f for f in self._last.values() if not f.done()]
+            if not futs:
+                return
             wait(futs)
 
     def _key(self, token: str, st: dict, kind: str) -> str:
