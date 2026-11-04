@@ -72,14 +72,18 @@ UPDATE_ARGS = {  # action -> git-deploy args; sync restarts this very app, so it
 }
 
 
+def _gd(exe, *args):
+    return subprocess.run([exe, *args], capture_output=True, text=True, timeout=GIT_DEPLOY_TIMEOUT_S,
+                          stdin=subprocess.DEVNULL)
+
+
 def _updates():
     """Dashboard data for the Updates panel; None when git-deploy is not installed."""
     exe = shutil.which("git-deploy")
     if not exe:
         return None
     try:
-        r = subprocess.run([exe, "status", GIT_DEPLOY_APP], capture_output=True, text=True,
-                           timeout=GIT_DEPLOY_TIMEOUT_S, stdin=subprocess.DEVNULL)
+        r = _gd(exe, "status", GIT_DEPLOY_APP)
         text = (r.stdout + r.stderr).strip() or f"git-deploy status exited {r.returncode}"
     except (OSError, subprocess.SubprocessError) as e:
         text = f"git-deploy status failed: {e}"
@@ -102,8 +106,7 @@ def update(action):
                 subprocess.Popen([exe, *args], stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
                                  start_new_session=True)
         else:
-            r = subprocess.run([exe, *args], capture_output=True, text=True,
-                               timeout=GIT_DEPLOY_TIMEOUT_S, stdin=subprocess.DEVNULL)
+            r = _gd(exe, *args)
             if r.returncode:
                 return jsonify(error=(r.stdout + r.stderr).strip() or f"exit {r.returncode}"), 502
     except (OSError, subprocess.SubprocessError) as e:
