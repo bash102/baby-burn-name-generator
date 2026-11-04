@@ -69,6 +69,26 @@ def test_defaults():
     assert c.provider_timeout_s == 90
 
 
+def test_listen_port_and_tls_defaults():
+    c = Config.from_env({})
+    assert c.listen_port == 443
+    assert c.tls_cert == ROOT / "certs" / "babyburn.local.pem"
+    assert c.tls_key == ROOT / "certs" / "babyburn.local-key.pem"
+
+
+def test_listen_port_and_tls_from_env(tmp_path):
+    c = Config.from_env({"LISTEN_PORT": "9443", "TLS_CERT": "certs/x.pem", "TLS_KEY": str(tmp_path / "k.pem")})
+    assert c.listen_port == 9443
+    assert c.tls_cert == ROOT / "certs" / "x.pem"
+    assert c.tls_key == tmp_path / "k.pem"
+
+
+@pytest.mark.parametrize("val", ["0", "65536", "-1", "abc"])
+def test_bad_listen_port_raises(val):
+    with pytest.raises(ValueError, match="LISTEN_PORT"):
+        Config.from_env({"LISTEN_PORT": val})
+
+
 def test_empty_s3_endpoint_is_none():
     assert Config.from_env({"S3_ENDPOINT_URL": ""}).s3_endpoint_url is None
 

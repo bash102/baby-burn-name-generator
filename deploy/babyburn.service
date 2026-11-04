@@ -1,17 +1,18 @@
+## Template for deploy/setup-pi.sh. Placeholders: @USER@, @REPO@, @PORT_CAPS@ (AmbientCapabilities only when LISTEN_PORT < 1024). '##' lines are stripped on install.
 [Unit]
 Description=Baby Burn name generator
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/baby-burn-name-generator
-EnvironmentFile=/home/pi/baby-burn-name-generator/.env
+User=@USER@
+WorkingDirectory=@REPO@
+EnvironmentFile=@REPO@/.env
 # Run the checkout's venv python directly (created by `uv sync`): no resolve/sync at start, works offline.
-ExecStart=/home/pi/baby-burn-name-generator/.venv/bin/python -m app.web
+ExecStart=@REPO@/.venv/bin/python -m app.web
 Restart=always
 RestartSec=3
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+@PORT_CAPS@
 
 [Install]
 WantedBy=multi-user.target

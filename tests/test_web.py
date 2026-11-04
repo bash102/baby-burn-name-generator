@@ -662,6 +662,36 @@ def test_late_dusty_still_uploaded_after_kiosk_gives_up(tmp_path, sample_content
     assert f"tmp/{tok}/dusty.jpg" in k.keys()
 
 
+def _run_main(monkeypatch, argv, env, tmp_path):
+    calls = []
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(web, "serve", lambda *a: calls.append(a))
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    web.main(argv)
+    return calls
+
+
+def test_main_tls_uses_configured_port_and_certs(tmp_path, monkeypatch):
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
+    cert.write_text("x")
+    key.write_text("x")
+    [(_, host, port, ctx)] = _run_main(
+        monkeypatch, [], {"LISTEN_PORT": "9443", "TLS_CERT": str(cert), "TLS_KEY": str(key)}, tmp_path)
+    assert (host, port, ctx) == ("0.0.0.0", 9443, (str(cert), str(key)))
+
+
+def test_main_missing_cert_names_path(tmp_path, monkeypatch):
+    missing = tmp_path / "nope.pem"
+    with pytest.raises(SystemExit, match="nope.pem"):
+        _run_main(monkeypatch, [], {"TLS_CERT": str(missing), "TLS_KEY": str(missing)}, tmp_path)
+
+
+def test_main_dev_ignores_listen_port(tmp_path, monkeypatch):
+    [(_, host, port)] = _run_main(monkeypatch, ["--dev", "--port", "8123"], {"LISTEN_PORT": "9443"}, tmp_path)
+    assert (host, port) == ("127.0.0.1", 8123)
+
+
 def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir, monkeypatch):
     """A client that connects and never sends a TLS ClientHello must not block other requests."""
     import socket
