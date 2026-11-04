@@ -49,7 +49,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 <p>Now: <b id="prov">{{ st.provider_name }}</b> (resets to the .env value on restart)
 {% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'>{{ p }}</button> {% endfor %}</p>
 <h2>Updates</h2>
-{% if updates %}{% if updates.paused %}<div class="banner warn">{{ updates.paused }}</div>{% endif %}
+{% if updates %}{% for f in updates.flags %}<div class="banner warn">{{ f }}</div>{% endfor %}
 <pre>{{ updates.status }}</pre>
 <p><button data-post="/admin/update/pause">Pause</button> <button data-post="/admin/update/resume">Resume</button>
 <button data-post="/admin/update/sync">Update now</button> (restarts the kiosk; log: data/git-deploy-sync.log)</p>
@@ -102,12 +102,14 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% endif %}
 </main>
 <script>
-const flash = m => { const f = document.getElementById("flash"); f.textContent = m; f.hidden = !m; };
+const flash = (m, ok) => { const f = document.getElementById("flash"); f.textContent = m; f.hidden = !m; f.className = "banner " + (ok ? "ok" : "err"); };
 const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
   body: JSON.stringify(body || {})}).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status); });
 document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
-    flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload(); else b.textContent += " ✓";
+    flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
+    else if (/update\/sync$/.test(b.dataset.post)) flash("Update started — the kiosk restarts if there's a new version; check status in a minute", true);
+    else b.textContent += " ✓";
   }).catch(e => flash("Failed: " + e.message)));
 const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};
 function shown(row, s) {

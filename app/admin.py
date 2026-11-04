@@ -1,9 +1,13 @@
 """PIN-protected owner pages: dashboard, content review/add, reprint. HTTP Basic, password = ADMIN_PIN."""
 import hmac
 import logging
+import os
+import pwd
 import re
 import shutil
 import subprocess
+import threading
+import time
 from io import BytesIO
 from urllib.parse import quote, urlparse
 
@@ -65,16 +69,49 @@ def _body():
 
 GIT_DEPLOY_APP = "baby-burn-name-generator"
 GIT_DEPLOY_TIMEOUT_S = 15
-UPDATE_ARGS = {  # action -> git-deploy args; sync restarts this very app, so it runs detached
+STATUS_TTL_S = 10  # /admin loads reuse one `git-deploy status` for this long
+BUSY_MSG = "a deploy is running — retry in a minute"  # git-deploy holds its per-app lock while deploying
+FLAG_LINE = re.compile(r"^\s*(PAUSED|BLOCKED)\b")  # git-deploy status: "  PAUSED (since …): …", "  BLOCKED: …"
+UPDATE_ARGS = {  # action -> git-deploy args
     "pause": ["pause", GIT_DEPLOY_APP, "--reason", "paused from admin"],
     "resume": ["resume", GIT_DEPLOY_APP],
     "sync": ["sync", GIT_DEPLOY_APP, "--force"],
 }
+_status_cache = {"at": float("-inf"), "text": ""}
+_status_lock = threading.Lock()
 
 
-def _gd(exe, *args):
-    return subprocess.run([exe, *args], capture_output=True, text=True, timeout=GIT_DEPLOY_TIMEOUT_S,
+def _gd(argv):
+    return subprocess.run(argv, capture_output=True, text=True, timeout=GIT_DEPLOY_TIMEOUT_S,
                           stdin=subprocess.DEVNULL)
+
+
+def _detached(exe, args):
+    """argv running git-deploy in its own transient systemd unit: the deploy restarts app-babyburn, which
+    would kill a child in our cgroup mid-deploy. systemd-run returns once the unit starts (no child to reap)."""
+    me, log_path = pwd.getpwuid(os.getuid()), _st().cfg.data_dir / "git-deploy-sync.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.touch()  # created by us, not by systemd as root
+    return ["sudo", "-n", "systemd-run", f"--uid={me.pw_name}", "--collect", "--quiet",
+            f"--unit=babyburn-update-{time.strftime('%Y%m%d-%H%M%S')}",
+            f"--property=StandardOutput=append:{log_path}", f"--property=StandardError=append:{log_path}",
+            f"--working-directory={me.pw_dir}", f"--setenv=HOME={me.pw_dir}",  # git-deploy finds ~/apps
+            os.path.abspath(exe), *args]
+
+
+def _status_text(exe):
+    with _status_lock:  # concurrent loads share one call
+        if time.monotonic() - _status_cache["at"] < STATUS_TTL_S:
+            return _status_cache["text"]
+        try:
+            r = _gd([exe, "status", GIT_DEPLOY_APP])
+            text = (r.stdout + r.stderr).strip() or f"git-deploy status exited {r.returncode}"
+        except subprocess.TimeoutExpired:
+            text = BUSY_MSG
+        except (OSError, subprocess.SubprocessError) as e:
+            text = f"git-deploy status failed: {e}"
+        _status_cache.update(at=time.monotonic(), text=text)
+        return text
 
 
 def _updates():
@@ -82,12 +119,8 @@ def _updates():
     exe = shutil.which("git-deploy")
     if not exe:
         return None
-    try:
-        r = _gd(exe, "status", GIT_DEPLOY_APP)
-        text = (r.stdout + r.stderr).strip() or f"git-deploy status exited {r.returncode}"
-    except (OSError, subprocess.SubprocessError) as e:
-        text = f"git-deploy status failed: {e}"
-    return {"status": text, "paused": next((ln for ln in text.splitlines() if "PAUSED" in ln), None)}
+    text = _status_text(exe)
+    return {"status": text, "flags": [ln.strip() for ln in text.splitlines() if FLAG_LINE.match(ln)]}
 
 
 @bp.post("/update/<action>")
@@ -98,20 +131,16 @@ def update(action):
     exe = shutil.which("git-deploy")
     if not exe:
         return jsonify(error="git-deploy is not installed"), 503
+    _status_cache["at"] = float("-inf")  # the next /admin load shows the new state
     try:
-        if action == "sync":
-            log_path = _st().cfg.data_dir / "git-deploy-sync.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "ab") as out:  # the child keeps its own duplicate of the fd
-                subprocess.Popen([exe, *args], stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                 start_new_session=True)
-        else:
-            r = _gd(exe, *args)
-            if r.returncode:
-                return jsonify(error=(r.stdout + r.stderr).strip() or f"exit {r.returncode}"), 502
+        r = _gd(_detached(exe, args) if action == "sync" else [exe, *args])
+    except subprocess.TimeoutExpired:
+        return jsonify(error=BUSY_MSG), 504
     except (OSError, subprocess.SubprocessError) as e:
         log.exception("git-deploy %s failed", action)
         return jsonify(error=str(e) or type(e).__name__), 502
+    if r.returncode:
+        return jsonify(error=(r.stdout + r.stderr).strip() or f"exit {r.returncode}"), 502
     return jsonify(ok=True)
 
 

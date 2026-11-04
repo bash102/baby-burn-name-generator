@@ -101,6 +101,14 @@ def test_bad_local_http_port_raises(val):
         Config.from_env({"LOCAL_HTTP_PORT": val})
 
 
+def test_local_http_port_must_differ_from_listen_port():
+    with pytest.raises(ValueError, match="LOCAL_HTTP_PORT must differ from LISTEN_PORT"):
+        Config.from_env({"LISTEN_PORT": "9444", "LOCAL_HTTP_PORT": "9444"})
+    with pytest.raises(ValueError, match="LOCAL_HTTP_PORT must differ"):
+        Config.from_env({"LOCAL_HTTP_PORT": "443"})  # the LISTEN_PORT default
+    assert Config.from_env({"LISTEN_PORT": "9443", "LOCAL_HTTP_PORT": "9444"}).local_http_port == 9444
+
+
 def test_empty_s3_endpoint_is_none():
     assert Config.from_env({"S3_ENDPOINT_URL": ""}).s3_endpoint_url is None
 

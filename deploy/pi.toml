@@ -5,6 +5,6 @@ start = ".venv/bin/python -m app.web"
 port = 9444                       # plain HTTP, 127.0.0.1 only (LOCAL_HTTP_PORT below)
 health = "http://127.0.0.1:9444/api/quiz"
 serve_port = 9445                 # tailscale serve --https=9445 -> 127.0.0.1:9444
-memory_max = "400M"
+memory_max = "400M"               # measure: systemctl show app-babyburn -p MemoryPeak
 env_file = "~/.config/baby-burn/env"
-env = { LOCAL_HTTP_PORT = "9444" }
+env = { LOCAL_HTTP_PORT = "9444" } # not in env_file: EnvironmentFile= overrides Environment=
