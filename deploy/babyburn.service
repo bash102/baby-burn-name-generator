@@ -1,5 +1,4 @@
-## Template: deploy/setup-pi.sh drops these "##" lines, substitutes @USER@ (login user), @REPO@ (checkout path)
-## and @PORT_CAPS@ (AmbientCapabilities line when LISTEN_PORT < 1024, else a comment), and installs the result.
+## Template for deploy/setup-pi.sh. Placeholders: @USER@, @REPO@, @PORT_CAPS@ (AmbientCapabilities only when LISTEN_PORT < 1024). '##' lines are stripped on install.
 [Unit]
 Description=Baby Burn name generator
 After=network-online.target

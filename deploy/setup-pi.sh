@@ -7,7 +7,7 @@
 #   KIOSK_PORT    TLS port (default: 443)
 #   SET_HOSTNAME  yes|no: set the Pi hostname to KIOSK_HOST (default: yes)
 #   SET_TIMEZONE  yes|no: set America/New_York (default: yes)
-#   DRY_RUN=1     print every system change instead of making it
+#   DRY_RUN=1     print every system change instead of making it (unset, 0 or 1 only)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,11 +16,13 @@ HOST="${KIOSK_HOST:-babyburn}"
 PORT="${KIOSK_PORT:-443}"
 SET_HOSTNAME="${SET_HOSTNAME:-yes}"
 SET_TIMEZONE="${SET_TIMEZONE:-yes}"
-DRY_RUN="${DRY_RUN:-0}"
+DRY_RUN="${DRY_RUN-0}"  # empty is an error below, not 0
 
 [ "$(id -u)" -ne 0 ] || { echo "Run as a normal user (not root); sudo is used where needed." >&2; exit 1; }
-case "$PORT" in ''|*[!0-9]*) echo "KIOSK_PORT must be a number, got '$PORT'" >&2; exit 1;; esac
-{ [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; } || { echo "KIOSK_PORT must be 1-65535, got '$PORT'" >&2; exit 1; }
+case "$DRY_RUN" in 0|1) ;; *) echo "DRY_RUN must be unset, 0 or 1, got '$DRY_RUN'" >&2; exit 1;; esac
+[ "$APP_USER" = "$(id -un)" ] || { echo "APP_USER ($APP_USER) must be the user running this script ($(id -un))." >&2; exit 1; }
+case "$PORT" in ''|*[!0-9]*|0*|??????*) echo "KIOSK_PORT must be 1-65535, got '$PORT'" >&2; exit 1;; esac
+[ "$PORT" -le 65535 ] || { echo "KIOSK_PORT must be 1-65535, got '$PORT'" >&2; exit 1; }
 for v in SET_HOSTNAME SET_TIMEZONE; do
   case "${!v}" in yes|no) ;; *) echo "$v must be yes or no, got '${!v}'" >&2; exit 1;; esac
 done
@@ -32,7 +34,7 @@ run() { if [ "$DRY_RUN" = 1 ]; then echo "DRY-RUN: $*"; else "$@"; fi; }
 echo "== apt packages"
 MISSING=()
 for p in python3-venv libusb-1.0-0 avahi-daemon git curl mkcert usbutils; do
-  dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p")
+  dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || MISSING+=("$p")
 done
 if [ "${#MISSING[@]}" -eq 0 ]; then
   echo "all required packages already installed"
@@ -62,15 +64,15 @@ echo "== uv + python deps (run from the checkout, never pip-installed)"
 if [ "$DRY_RUN" = 1 ]; then
   echo "DRY-RUN: install uv if missing; (cd $REPO && uv sync --python 3.11)"
 else
-  command -v uv >/dev/null || [ -x "$HOME/.local/bin/uv" ] || curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
-  (cd "$REPO" && uv sync --python 3.11)
+  UV="$HOME/.local/bin/uv"
+  [ -x "$UV" ] || curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh
+  (cd "$REPO" && "$UV" sync --python 3.11)
 fi
 
 echo "== udev rule for Brother QL-800 (04f9:209b)"
 run sudo install -m 644 "$REPO/deploy/99-brother-ql.rules" /etc/udev/rules.d/99-brother-ql.rules
 run sudo udevadm control --reload-rules
-run sudo udevadm trigger
+run sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=04f9
 if [ "$DRY_RUN" != 1 ]; then
   lsusb | grep -q '04f9:209b' || echo "NOTE: QL-800 (04f9:209b) not seen in lsusb; plug it in and power it on (Editor Lite light off)."
 fi
@@ -85,18 +87,24 @@ else
   if [ ! -f "$REPO/$CERT" ]; then
     mkcert -cert-file "$REPO/$CERT" -key-file "$REPO/$KEY" "$HOST.local"
   fi
-  # mkcert creates its CA on first cert generation; the Pi doesn't trust it (no -install), only the iPad does
-  cp "$(mkcert -CAROOT)/rootCA.pem" "$REPO/certs/rootCA.pem"  # install this on the iPad
+  # mkcert makes its CA on first use. No -install: only the iPad needs to trust it.
+  CAROOT_PEM="$(mkcert -CAROOT)/rootCA.pem"
+  [ -f "$CAROOT_PEM" ] || mkcert -cert-file "$REPO/$CERT" -key-file "$REPO/$KEY" "$HOST.local"
+  cp "$CAROOT_PEM" "$REPO/certs/rootCA.pem"  # install this on the iPad
 fi
 
 echo "== .env"
 ENV_NEW=0
 [ -f "$REPO/.env" ] || ENV_NEW=1
-# Append KEY=VALUE to .env unless KEY is already set there.
+# Append KEY=VALUE to .env unless KEY is already set there (an existing value wins; warn if it differs).
 env_default() {
-  if [ "$DRY_RUN" = 1 ]; then
-    if [ -f "$REPO/.env" ] && grep -q "^$1=" "$REPO/.env"; then echo ".env: $1 already set, kept"; else echo "DRY-RUN: .env gets $1=$2"; fi
-  elif ! grep -q "^$1=" "$REPO/.env"; then
+  if [ -f "$REPO/.env" ] && grep -q "^$1=" "$REPO/.env"; then
+    old="$(sed -n "s/^$1=//p" "$REPO/.env" | tail -1)"
+    echo ".env: $1 already set, kept"
+    [ "$old" = "$2" ] || echo "WARNING: .env keeps $1=$old, but KIOSK_HOST/KIOSK_PORT imply $2. Edit $REPO/.env to change it."
+  elif [ "$DRY_RUN" = 1 ]; then
+    echo "DRY-RUN: .env gets $1=$2"
+  else
     [ -z "$(tail -c1 "$REPO/.env")" ] || echo >> "$REPO/.env"
     echo "$1=$2" >> "$REPO/.env"
   fi

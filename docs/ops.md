@@ -24,7 +24,7 @@ Re-running `setup-r2.sh` is safe; it keeps an existing `ALBUM_SECRET`.
 
 Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
 
-1. Flash with Raspberry Pi Imager: choose **Raspberry Pi OS Lite (64-bit)** (bookworm or newer). In Imager's OS customisation set hostname `babyburn`, username `pi` (the service and paths assume `/home/pi`), enable SSH, and optionally Wi-Fi.
+1. Flash with Raspberry Pi Imager: choose **Raspberry Pi OS Lite (64-bit)** (bookworm or newer). In Imager's OS customisation set hostname `babyburn`, username `pi` (the commands below assume `pi`; the script itself uses whoever runs it), enable SSH, and optionally Wi-Fi.
 2. Until setup finishes, reach the Pi at `babyburn.local` (set in Imager) or its IP address.
 3. On the Pi, clone the public repo (no login needed) and run the setup script:
    ```
@@ -36,7 +36,7 @@ Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
    - installs `uv` and runs `uv sync --python 3.11` (the app runs from the checkout, never pip-installed)
    - adds the QL-800 udev rule (`lsusb` should show `04f9:209b`)
    - generates certs with `mkcert` into `certs/` (plus `certs/rootCA.pem` for the iPad)
-   - enables `babyburn.service` (`.venv/bin/python -m app.web` on :443, `Restart=always`, no network needed to start)
+   - enables `babyburn.service` (`.venv/bin/python -m app.web` on :443 by default; a shared Pi can use another user or port, see the last subsection, `Restart=always`, no network needed to start)
    - creates `.env` (mode 600) with a random 8-digit `ADMIN_PIN`, printed once; note it
    - does not start the service. Re-runs restart it automatically, unless `content/` is missing.
 4. Add the R2 and provider settings. On your Mac, from the project folder, copy the `.env` you made in section 1 (plus your provider keys) to a side file; do not overwrite the Pi's `.env`, which holds the generated `ADMIN_PIN`:
@@ -68,16 +68,66 @@ After editing content by hand (on the Pi, or re-syncing from your Mac), run the 
 
 ### Installing on a Pi that already runs other services (e.g. raspberryfly)
 
-Clone to `~/apps/baby-burn-name-generator`, then run the script with the alongside settings. Run it with `DRY_RUN=1` first: it prints every system change (apt packages, udev rule, systemd unit, enable/start) and makes none.
-```
-cd ~/apps/baby-burn-name-generator
-DRY_RUN=1 KIOSK_HOST=raspberryfly KIOSK_PORT=9443 SET_HOSTNAME=no SET_TIMEZONE=no ./deploy/setup-pi.sh
-KIOSK_HOST=raspberryfly KIOSK_PORT=9443 SET_HOSTNAME=no SET_TIMEZONE=no ./deploy/setup-pi.sh
-```
-- The user and repo path come from whoever runs the script and where the checkout is (override the user with `APP_USER`).
-- Only missing apt packages are installed. Hostname, timezone, network and Tailscale are not touched, and no other service is restarted or reconfigured; the only additions are `babyburn.service`, the QL-800 udev rule and `certs/`.
-- `LISTEN_PORT`, `TLS_CERT` and `TLS_KEY` are written to `.env` (only if not already set).
-- iPad URL: `https://raspberryfly.local:9443`. Install and trust the mkcert root CA `certs/rootCA.pem` on the iPad (section 4).
+Target: raspberryfly (Debian 13, user `bash102`, `avahi-daemon`, `git` and `libusb` already installed). Run everything on the Pi as `bash102`, never with `sudo` (the script calls `sudo` itself).
+
+1. Preflight. `hostname` must print `raspberryfly` and the port check must print nothing:
+   ```
+   hostname
+   ss -ltn | grep ':9443 '
+   ```
+2. Clone and set the alongside settings:
+   ```
+   mkdir -p ~/apps && git clone https://github.com/bash102/baby-burn-name-generator.git ~/apps/baby-burn-name-generator && cd ~/apps/baby-burn-name-generator
+   export KIOSK_HOST=raspberryfly KIOSK_PORT=9443 SET_HOSTNAME=no SET_TIMEZONE=no
+   ```
+3. Dry run: prints every system change and makes none. Read the list.
+   ```
+   DRY_RUN=1 ./deploy/setup-pi.sh
+   ```
+4. Install. It prints the new `ADMIN_PIN` once; do not save that output anywhere.
+   ```
+   ./deploy/setup-pi.sh
+   ```
+5. R2 and provider settings (section 2, step 4), with this Pi's address. On your Mac, from the project folder:
+   ```
+   scp .env bash102@raspberryfly.local:~/r2.env
+   ```
+   On the Pi:
+   ```
+   cd ~/apps/baby-burn-name-generator
+   chmod 600 ~/r2.env
+   grep -E '^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=' ~/r2.env > ~/r2.lines && [ -s ~/r2.lines ] && sed -i -E '/^(PHOTO_BUCKET|PHOTO_BASE_URL|S3_ENDPOINT_URL|S3_REGION|S3_ACCESS_KEY_ID|S3_SECRET_ACCESS_KEY|ALBUM_SECRET|OPENAI_API_KEY|GEMINI_API_KEY|TRANSFORM_PROVIDER)=/d' .env && sed -i -e '$a\' .env && cat ~/r2.lines >> .env; rm -f ~/r2.env ~/r2.lines
+   ```
+   Then set `PRINTER=usb://0x04f9:0x209b` in `.env` and check the provider keys as in section 2.
+6. Content (section 2, step 5). On your Mac, inside the project folder:
+   ```
+   gh repo clone bash102/baby-burn-content content
+   git -C content checkout drafts-v1
+   rsync -a --delete --exclude .git content/ bash102@raspberryfly.local:~/apps/baby-burn-name-generator/content/
+   ```
+7. On the Pi, validate, start and verify:
+   ```
+   cd ~/apps/baby-burn-name-generator && uv run --env-file .env python -m app.content content/
+   sudo systemctl start babyburn
+   systemctl status babyburn --no-pager
+   curl -sk https://localhost:9443/kiosk.html | head -1
+   ```
+8. iPad. On the Mac, fetch the root CA, AirDrop it to the iPad and trust it (section 4, steps 1-2):
+   ```
+   scp bash102@raspberryfly.local:apps/baby-burn-name-generator/certs/rootCA.pem .
+   ```
+   In Safari open `https://raspberryfly.local:9443/kiosk.html` and Add to Home Screen. Remove any old `babyburn.local` icon.
+
+What the script changes:
+- `uv` in `~/.local/bin` (plus a Python 3.11 download), no shell profile edits
+- `.venv`, `.env` (mode 600) and `certs/` in the checkout
+- `babyburn.service`: enabled, and started only when you start it (or on a re-run once `.env` and `content/` exist)
+- the QL-800 udev rule; the udev reload is limited to USB vendor 04f9 (the printer)
+- only the apt packages that are missing (nothing, if all are present)
+
+Hostname, timezone, network, Tailscale and other services are not touched or restarted.
+
+Re-runs: values already in `.env` (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`) win over `KIOSK_PORT`/`KIOSK_HOST`. If they differ, the script prints a WARNING naming the kept value; edit `.env` to change it.
 
 ## 3. Networking
 
