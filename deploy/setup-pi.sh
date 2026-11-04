@@ -31,7 +31,7 @@ run() { if [ "$DRY_RUN" = 1 ]; then echo "DRY-RUN: $*"; else "$@"; fi; }
 
 echo "== apt packages"
 MISSING=()
-for p in python3-venv libusb-1.0-0 avahi-daemon git curl mkcert libnss3-tools usbutils; do
+for p in python3-venv libusb-1.0-0 avahi-daemon git curl mkcert usbutils; do
   dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p")
 done
 if [ "${#MISSING[@]}" -eq 0 ]; then
@@ -79,13 +79,13 @@ echo "== TLS certs (mkcert) for $HOST.local"
 CERT="certs/$HOST.local.pem"
 KEY="certs/$HOST.local-key.pem"
 if [ "$DRY_RUN" = 1 ]; then
-  echo "DRY-RUN: mkcert -install; mkcert -cert-file $REPO/$CERT -key-file $REPO/$KEY $HOST.local (if missing); copy rootCA.pem to $REPO/certs/"
+  echo "DRY-RUN: mkcert -cert-file $REPO/$CERT -key-file $REPO/$KEY $HOST.local (if missing); copy rootCA.pem to $REPO/certs/"
 else
   mkdir -p "$REPO/certs"
-  mkcert -install
   if [ ! -f "$REPO/$CERT" ]; then
     mkcert -cert-file "$REPO/$CERT" -key-file "$REPO/$KEY" "$HOST.local"
   fi
+  # mkcert creates its CA on first cert generation; the Pi doesn't trust it (no -install), only the iPad does
   cp "$(mkcert -CAROOT)/rootCA.pem" "$REPO/certs/rootCA.pem"  # install this on the iPad
 fi
 
