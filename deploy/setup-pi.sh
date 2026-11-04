@@ -145,7 +145,7 @@ run sudo systemctl enable babyburn.service
 if [ ! -d "$REPO/content" ]; then
   echo "NOTE: no private content in $REPO/content; service enabled but NOT started (it would serve sample content)."
   echo "On your Mac: rsync -a --delete <private content clone>/ $APP_USER@$HOST.local:$REPO/content/"
-  echo "Then on the Pi: cd $REPO && uv run --env-file .env python -m app.content content/ && sudo systemctl start babyburn"
+  echo "Then on the Pi: cd $REPO && ~/.local/bin/uv run --env-file .env python -m app.content content/ && sudo systemctl start babyburn"
 elif [ "$ENV_NEW" -eq 1 ]; then
   echo "NOTE: created .env from .env.example; service enabled but NOT started."
   echo "Edit $REPO/.env (provider keys, ADMIN_PIN, PRINTER=usb://0x04f9:0x209b), then: sudo systemctl start babyburn"

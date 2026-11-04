@@ -110,7 +110,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
 
     sessions = SessionStore(ThreadPoolExecutor(8, "transform"), cfg.session_ttl_s, now,
                             on_photo=on_photo, on_dusty=on_dusty, on_expire=on_expire)
-    st = AppState(cfg, content, names, printer or make_printer(cfg.printer, cfg.data_dir / "prints"),
+    st = AppState(cfg, content, names, printer or make_printer(cfg.printer, cfg.data_dir / "prints", (cfg.badge_offset_x, cfg.badge_offset_y)),
                   cfg.transform_provider, provider or get_provider(cfg.transform_provider, cfg),
                   sessions, photos, cloud)
     app.extensions["babyburn"] = st
