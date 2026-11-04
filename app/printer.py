@@ -20,6 +20,7 @@ def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
     out.paste(img, (dx, dy))
     return out
 
+
 class PrintError(Exception):
     pass
 

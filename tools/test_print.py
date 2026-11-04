@@ -10,8 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.config import Config  # noqa: E402
 from app.badge import render_badge  # noqa: E402
+from app.config import Config  # noqa: E402
 from app.printer import make_printer  # noqa: E402
 
 TAGLINE = "Dusty since the womb"
