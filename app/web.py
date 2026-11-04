@@ -17,7 +17,7 @@ from flask import Flask, Response, jsonify, redirect, request
 
 from app.admin import bp as admin_bp
 from app.badge import render_badge
-from app.config import ROOT, Config
+from app.config import Config
 from app.content import Content, ContentError, load_content
 from app.names import NameStore
 from app.photos import RETENTION_DAYS, AlbumIndex, CloudPhotos, MemoryS3, PhotoStore, make_s3_client
@@ -301,8 +301,11 @@ def main(argv=None) -> None:
     if args.dev:
         serve(app, "127.0.0.1", args.port)
     else:
-        certs = ROOT / "certs"
-        serve(app, "0.0.0.0", 443, (str(certs / "babyburn.local.pem"), str(certs / "babyburn.local-key.pem")))
+        cfg = app.extensions["babyburn"].cfg
+        for f in (cfg.tls_cert, cfg.tls_key):
+            if not f.is_file():
+                raise SystemExit(f"TLS file not found: {f} (run deploy/setup-pi.sh or set TLS_CERT/TLS_KEY)")
+        serve(app, "0.0.0.0", cfg.listen_port, (str(cfg.tls_cert), str(cfg.tls_key)))
 
 
 def serve(app: Flask, host: str, port: int, ssl_context=None) -> None:

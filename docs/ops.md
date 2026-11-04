@@ -66,6 +66,19 @@ Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
 
 After editing content by hand (on the Pi, or re-syncing from your Mac), run the validate command again before restarting; a broken file stops the kiosk from booting.
 
+### Installing on a Pi that already runs other services (e.g. raspberryfly)
+
+Clone to `~/apps/baby-burn-name-generator`, then run the script with the alongside settings. Run it with `DRY_RUN=1` first: it prints every system change (apt packages, udev rule, systemd unit, enable/start) and makes none.
+```
+cd ~/apps/baby-burn-name-generator
+DRY_RUN=1 KIOSK_HOST=raspberryfly KIOSK_PORT=9443 SET_HOSTNAME=no SET_TIMEZONE=no ./deploy/setup-pi.sh
+KIOSK_HOST=raspberryfly KIOSK_PORT=9443 SET_HOSTNAME=no SET_TIMEZONE=no ./deploy/setup-pi.sh
+```
+- The user and repo path come from whoever runs the script and where the checkout is (override the user with `APP_USER`).
+- Only missing apt packages are installed. Hostname, timezone, network and Tailscale are not touched, and no other service is restarted or reconfigured; the only additions are `babyburn.service`, the QL-800 udev rule and `certs/`.
+- `LISTEN_PORT`, `TLS_CERT` and `TLS_KEY` are written to `.env` (only if not already set).
+- iPad URL: `https://raspberryfly.local:9443`. Install and trust the mkcert root CA `certs/rootCA.pem` on the iPad (section 4).
+
 ## 3. Networking
 
 - Ethernet first: plug the Pi into the venue router. The iPad joins the same network and opens `https://babyburn.local`.

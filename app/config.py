@@ -20,6 +20,9 @@ class Config:
     openai_vision_model: str = "gpt-5-mini"
     gemini_image_model: str = "gemini-3.1-flash-image"
     gemini_vision_model: str = "gemini-3.5-flash-lite"
+    listen_port: int = 443  # TLS kiosk port (--dev uses --port instead)
+    tls_cert: Path = ROOT / "certs" / "babyburn.local.pem"
+    tls_key: Path = ROOT / "certs" / "babyburn.local-key.pem"
     printer: str = "file"  # usb://0x04f9:0x209b | file
     admin_pin: str = ""
     transform_timeout_s: float = 25  # kiosk display budget: /photo reports failed after this
@@ -69,6 +72,8 @@ class Config:
             kw["content_dir"] = ROOT / "content" if (ROOT / "content").is_dir() else SAMPLE_DIR
         if "photo_base_url" in kw:
             kw["photo_base_url"] = kw["photo_base_url"].rstrip("/")
+        if not 1 <= kw.get("listen_port", cls.listen_port) <= 65535:
+            raise ValueError(f"LISTEN_PORT must be 1-65535, got {kw['listen_port']!r}")
         if kw.get("transform_provider", cls.transform_provider) not in PROVIDERS:
             raise ValueError(
                 f"TRANSFORM_PROVIDER must be one of {sorted(PROVIDERS)}, got {kw['transform_provider']!r}"
