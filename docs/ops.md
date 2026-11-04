@@ -146,11 +146,15 @@ Re-runs: values already in `.env` (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`) win ove
 
 Brother QL-800: turn **Editor Lite off** (the green light on the unit must be off, hold the button until it goes out). Load Brother DK-1234 (DK-11234 outside the US): 60 × 86 mm die-cut name badges; keep a spare roll.
 
-**Calibrate print alignment.** Print a test badge with trial offsets in printer dots (about 12 per mm; negative = left/up):
+**Calibrate print alignment.** From the app directory (`cd ~/apps/baby-burn-name-generator`, or wherever you installed it), print a test badge with trial offsets (units, directions and range are in `.env.example`). Each try prints a real label, so keep spares:
 ```
 ~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --offset-x -6 --offset-y -13
 ```
-Adjust until the margins look even, then set `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env` and run `sudo systemctl restart babyburn`. (`uv` may not be on PATH in an SSH session right after setup, hence the full path; or log out and back in.)
+Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
+```
+~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"
+```
+(Full `uv` path because it may not be on PATH yet in a fresh SSH session.)
 
 ## 6. Go-live checklist
 

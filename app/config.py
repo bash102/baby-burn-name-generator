@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Mapping, get_type_hints
 
 ROOT = Path(__file__).resolve().parent.parent
+OFFSET_LIMIT = 60  # max |BADGE_OFFSET_X/Y|, printer dots
 SAMPLE_DIR = ROOT / "content.sample"
 PROVIDERS = {"openai", "gemini", "fake"}
 
@@ -60,8 +61,8 @@ class Config:
                 except ValueError:
                     raise ValueError(f"{var} must be a number, got {raw!r}") from None
                 if name.startswith("badge_offset_"):
-                    if abs(value) > 60:
-                        raise ValueError(f"{var} must be between -60 and 60, got {raw!r}")
+                    if abs(value) > OFFSET_LIMIT:
+                        raise ValueError(f"{var} must be between -{OFFSET_LIMIT} and {OFFSET_LIMIT}, got {raw!r}")
                 elif not (math.isfinite(value) and value > 0):
                     raise ValueError(f"{var} must be a finite number > 0, got {raw!r}")
             elif typ == (str | None):

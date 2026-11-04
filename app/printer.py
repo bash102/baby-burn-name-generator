@@ -16,7 +16,7 @@ def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
     """Move content by (dx, dy) on a white canvas of the same size; anything pushed off an edge is clipped."""
     if not (dx or dy):
         return img
-    out = Image.new(img.mode, img.size, 1 if img.mode == "1" else 255)
+    out = Image.new(img.mode, img.size, 1 if img.mode == "1" else "white")
     out.paste(img, (dx, dy))
     return out
 
@@ -53,7 +53,7 @@ def _usb_printer(target: str) -> Callable[[Image.Image], None]:
 
 
 def make_printer(target: str, out_dir: Path, offset: tuple[int, int] = (0, 0)) -> Callable[[Image.Image], None]:
-    """Single choke point for every badge print; offset = (dx, dy) calibration in printer dots."""
+    """Wrap the printer so every badge is shifted by offset=(dx, dy) printer dots."""
     if target == "file":
         inner = _file_printer(Path(out_dir))
     elif target.startswith("usb://"):

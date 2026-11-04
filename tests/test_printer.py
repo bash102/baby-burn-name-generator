@@ -69,7 +69,7 @@ def test_shift_moves_pixel_and_zero_is_identity():
 def test_shift_clips_off_edge():
     im = Image.new("1", (954, 672), 1)
     im.putpixel((2, 2), 0)
-    assert min(printer.shift(im, -5, 0).getdata()) == 1
+    assert printer.shift(im, -5, 0).getextrema()[0] == 1
 
 
 def test_make_printer_applies_offset(tmp_path):
@@ -78,3 +78,23 @@ def test_make_printer_applies_offset(tmp_path):
     make_printer("file", tmp_path, offset=(-13, -6))(im)
     out = Image.open(next(tmp_path.glob("badge-*.png"))).convert("1")
     assert out.getpixel((87, 44)) == 0
+
+
+@pytest.mark.parametrize("flag", ["--offset-x", "--offset-y"])
+@pytest.mark.parametrize("val", ["61", "-61"])
+def test_test_print_rejects_out_of_range_offset(flag, val, capsys):
+    from tools import test_print
+    with pytest.raises(SystemExit):
+        test_print.main(["x", "file", flag, val])
+    assert "between -60 and 60" in capsys.readouterr().err
+
+
+def test_test_print_defaults_from_env(monkeypatch, capsys):
+    from tools import test_print
+    monkeypatch.setenv("BADGE_OFFSET_X", "-6")
+    monkeypatch.setenv("BADGE_OFFSET_Y", "-13")
+    monkeypatch.setattr(test_print, "make_printer", lambda t, d, off: lambda img: None)
+    test_print.main(["x", "file"])
+    assert "offset x=-6 y=-13" in capsys.readouterr().out
+    test_print.main(["x", "file", "--offset-x", "3"])
+    assert "offset x=3 y=-13" in capsys.readouterr().out

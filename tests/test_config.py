@@ -133,8 +133,8 @@ def test_retention_is_not_configurable():
 
 def test_badge_offsets():
     assert (Config().badge_offset_x, Config().badge_offset_y) == (0, 0)
-    c = Config.from_env({"BADGE_OFFSET_X": "-13", "BADGE_OFFSET_Y": "-6"})
-    assert (c.badge_offset_x, c.badge_offset_y) == (-13, -6)
+    c = Config.from_env({"BADGE_OFFSET_X": "-6", "BADGE_OFFSET_Y": "-13"})
+    assert (c.badge_offset_x, c.badge_offset_y) == (-6, -13)
 
 
 @pytest.mark.parametrize("var,val", [("BADGE_OFFSET_X", "61"), ("BADGE_OFFSET_Y", "-61"), ("BADGE_OFFSET_X", "abc")])

@@ -37,9 +37,9 @@ class Clock:
 
 
 class Kiosk:
-    def __init__(self, tmp_path, content_dir, provider=None, printer=None, s3=None):
+    def __init__(self, tmp_path, content_dir, provider=None, printer=None, s3=None, **cfg):
         self.cfg = Config(content_dir=content_dir, data_dir=tmp_path / "data", printer="file",
-                          photo_bucket="b", photo_base_url=BASE, album_secret=SECRET)
+                          photo_bucket="b", photo_base_url=BASE, album_secret=SECRET, **cfg)
         self.clock = Clock()
         self.s3 = s3 or MemoryS3()
         self.app = web.create_app(self.cfg, provider=provider or FakeProvider(delay_s=0),
@@ -102,6 +102,19 @@ def test_full_flow(k):
     assert r["first_burn_label"] == "First Burn: Baby Burn 2"
     assert r["photo_url"] == f"{BASE}/p/{k.sess(sid).token}"
     assert len(k.prints()) == 1
+
+
+def test_finish_prints_badge_shifted_by_configured_offset(tmp_path, sample_content_dir, monkeypatch):
+    def badge(*a, **kw):
+        im = Image.new("1", (954, 672), 1)
+        im.putpixel((100, 50), 0)
+        return im
+
+    monkeypatch.setattr(web, "render_badge", badge)
+    k = Kiosk(tmp_path, sample_content_dir, badge_offset_x=-6, badge_offset_y=13)
+    assert k.finish(k.session(photo=False))["printed"] is True
+    png = Image.open(k.prints()[0]).convert("1")
+    assert png.getpixel((94, 63)) == 0 and png.getpixel((100, 50)) == 255
 
 
 def test_preference_question_options_all_incorrect(k):
