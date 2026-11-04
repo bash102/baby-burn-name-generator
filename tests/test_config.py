@@ -129,3 +129,15 @@ def test_provider_timeout_separate_from_kiosk_budget():
 def test_retention_is_not_configurable():
     assert not hasattr(Config(), "photo_retention_days")
     assert "PHOTO_RETENTION_DAYS" not in (ROOT / ".env.example").read_text()
+
+
+def test_badge_offsets():
+    assert (Config().badge_offset_x, Config().badge_offset_y) == (0, 0)
+    c = Config.from_env({"BADGE_OFFSET_X": "-13", "BADGE_OFFSET_Y": "-6"})
+    assert (c.badge_offset_x, c.badge_offset_y) == (-13, -6)
+
+
+@pytest.mark.parametrize("var,val", [("BADGE_OFFSET_X", "61"), ("BADGE_OFFSET_Y", "-61"), ("BADGE_OFFSET_X", "abc")])
+def test_bad_badge_offset_raises(var, val):
+    with pytest.raises(ValueError, match=var):
+        Config.from_env({var: val})

@@ -61,7 +61,7 @@ Do this after section 1: you copy a few lines of the Mac `.env` onto the Pi.
    git -C content checkout drafts-v1
    rsync -a --delete --exclude .git content/ pi@babyburn.local:~/baby-burn-name-generator/content/
    ```
-6. Validate on the Pi: `cd ~/baby-burn-name-generator && uv run --env-file .env python -m app.content content/`. Without `content/` the kiosk would serve the public sample content, so `setup-pi.sh` will not start the service until it exists.
+6. Validate on the Pi: `cd ~/baby-burn-name-generator && ~/.local/bin/uv run --env-file .env python -m app.content content/`. Without `content/` the kiosk would serve the public sample content, so `setup-pi.sh` will not start the service until it exists.
 7. Start the service: `sudo systemctl start babyburn` (use `restart` after later edits).
 
 After editing content by hand (on the Pi, or re-syncing from your Mac), run the validate command again before restarting; a broken file stops the kiosk from booting.
@@ -107,7 +107,7 @@ Target: raspberryfly (Debian 13, user `bash102`, `avahi-daemon`, `git` and `libu
    ```
 7. On the Pi, validate, start and verify:
    ```
-   cd ~/apps/baby-burn-name-generator && uv run --env-file .env python -m app.content content/
+   cd ~/apps/baby-burn-name-generator && ~/.local/bin/uv run --env-file .env python -m app.content content/
    sudo systemctl start babyburn
    systemctl status babyburn --no-pager
    curl -sk https://localhost:9443/kiosk.html | head -1
@@ -146,15 +146,21 @@ Re-runs: values already in `.env` (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`) win ove
 
 Brother QL-800: turn **Editor Lite off** (the green light on the unit must be off, hold the button until it goes out). Load Brother DK-1234 (DK-11234 outside the US): 60 × 86 mm die-cut name badges; keep a spare roll.
 
+**Calibrate print alignment.** Print a test badge with trial offsets in printer dots (about 12 per mm; negative = left/up):
+```
+~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --offset-x -6 --offset-y -13
+```
+Adjust until the margins look even, then set `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env` and run `sudo systemctl restart babyburn`. (`uv` may not be on PATH in an SSH session right after setup, hence the full path; or log out and back in.)
+
 ## 6. Go-live checklist
 
-- [ ] `uv run --env-file .env python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
+- [ ] `~/.local/bin/uv run --env-file .env python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
 - [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `.env`.
-- [ ] Test print: `uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
+- [ ] Test print: `~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
 - [ ] Bucket lifecycle rule on `tmp/` matches `RETENTION_DAYS` in `app/photos.py` (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
 - [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
-- [ ] Cloud check, run on the Pi: `uv run --env-file .env python tools/cloud_check.py`. It puts, copies and batch-deletes a test page with the kiosk's own client, prints a URL, and waits for Enter. Open the URL on a phone on cellular (page loads), then open the bucket root URL (no listing), then press Enter.
+- [ ] Cloud check, run on the Pi: `~/.local/bin/uv run --env-file .env python tools/cloud_check.py`. It puts, copies and batch-deletes a test page with the kiosk's own client, prints a URL, and waits for Enter. Open the URL on a phone on cellular (page loads), then open the bucket root URL (no listing), then press Enter.
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
 - [ ] Freeze (section 8): after the last rehearsal, reset names and album so the party starts clean.
 
@@ -188,7 +194,7 @@ After the last rehearsal, reset the event so the party starts clean: every name 
 
 ```
 sudo systemctl stop babyburn
-cd ~/baby-burn-name-generator && uv run --env-file .env python tools/reset_event.py   # type yes
+cd ~/baby-burn-name-generator && ~/.local/bin/uv run --env-file .env python tools/reset_event.py   # type yes
 sudo systemctl start babyburn
 ```
 

@@ -12,6 +12,14 @@ from PIL import Image
 _lock = threading.Lock()  # one print job at a time
 
 
+def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
+    """Move content by (dx, dy) on a white canvas of the same size; anything pushed off an edge is clipped."""
+    if not (dx or dy):
+        return img
+    out = Image.new(img.mode, img.size, 1 if img.mode == "1" else 255)
+    out.paste(img, (dx, dy))
+    return out
+
 class PrintError(Exception):
     pass
 
@@ -43,9 +51,12 @@ def _usb_printer(target: str) -> Callable[[Image.Image], None]:
     return print_
 
 
-def make_printer(target: str, out_dir: Path) -> Callable[[Image.Image], None]:
+def make_printer(target: str, out_dir: Path, offset: tuple[int, int] = (0, 0)) -> Callable[[Image.Image], None]:
+    """Single choke point for every badge print; offset = (dx, dy) calibration in printer dots."""
     if target == "file":
-        return _file_printer(Path(out_dir))
-    if target.startswith("usb://"):
-        return _usb_printer(target)
-    raise ValueError(f"unknown printer target: {target!r}")
+        inner = _file_printer(Path(out_dir))
+    elif target.startswith("usb://"):
+        inner = _usb_printer(target)
+    else:
+        raise ValueError(f"unknown printer target: {target!r}")
+    return lambda img: inner(shift(img, *offset))

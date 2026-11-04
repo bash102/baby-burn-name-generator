@@ -56,3 +56,25 @@ def test_convert_called_with_60x86_and_rotate(monkeypatch, tmp_path, img):
     assert kw == dict(label="60x86", rotate="90", threshold=70, dither=False, cut=True)
     assert calls["send"][0] == b"data"
     assert calls["send"][1] == dict(printer_identifier="usb://0x04f9:0x209b", backend_identifier="pyusb")
+
+
+def test_shift_moves_pixel_and_zero_is_identity():
+    im = Image.new("1", (954, 672), 1)
+    im.putpixel((100, 50), 0)
+    assert printer.shift(im, 0, 0).tobytes() == im.tobytes()
+    out = printer.shift(im, -13, -6)
+    assert out.size == im.size and out.getpixel((87, 44)) == 0 and out.getpixel((100, 50)) == 1
+
+
+def test_shift_clips_off_edge():
+    im = Image.new("1", (954, 672), 1)
+    im.putpixel((2, 2), 0)
+    assert min(printer.shift(im, -5, 0).getdata()) == 1
+
+
+def test_make_printer_applies_offset(tmp_path):
+    im = Image.new("1", (954, 672), 1)
+    im.putpixel((100, 50), 0)
+    make_printer("file", tmp_path, offset=(-13, -6))(im)
+    out = Image.open(next(tmp_path.glob("badge-*.png"))).convert("1")
+    assert out.getpixel((87, 44)) == 0

@@ -25,6 +25,8 @@ class Config:
     tls_key: Path = ROOT / "certs" / "babyburn.local-key.pem"
     printer: str = "file"  # usb://0x04f9:0x209b | file
     admin_pin: str = ""
+    badge_offset_x: int = 0  # print calibration, printer dots (~12/mm): +right, -left
+    badge_offset_y: int = 0  # +down, -up
     transform_timeout_s: float = 25  # kiosk display budget: /photo reports failed after this
     provider_timeout_s: float = 90  # AI HTTP timeout; a late dusty image still reaches the phone page
     quiz_random_count: int = 4
@@ -57,7 +59,10 @@ class Config:
                     kw[name] = value = typ(raw)
                 except ValueError:
                     raise ValueError(f"{var} must be a number, got {raw!r}") from None
-                if not (math.isfinite(value) and value > 0):
+                if name.startswith("badge_offset_"):
+                    if abs(value) > 60:
+                        raise ValueError(f"{var} must be between -60 and 60, got {raw!r}")
+                elif not (math.isfinite(value) and value > 0):
                     raise ValueError(f"{var} must be a finite number > 0, got {raw!r}")
             elif typ == (str | None):
                 kw[name] = raw or None
