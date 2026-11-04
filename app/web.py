@@ -14,6 +14,7 @@ from typing import Callable
 
 import segno
 from flask import Flask, Response, jsonify, redirect, request
+from werkzeug.serving import make_server
 
 from app.admin import bp as admin_bp
 from app.badge import render_badge
@@ -298,22 +299,41 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(Config.from_env())
     threading.Thread(target=_expire_loop, args=(app.extensions["babyburn"].sessions,), daemon=True).start()
+    cfg = app.extensions["babyburn"].cfg
     if args.dev:
-        serve(app, "127.0.0.1", args.port)
-    else:
-        cfg = app.extensions["babyburn"].cfg
-        for f in (cfg.tls_cert, cfg.tls_key):
-            if not f.is_file():
-                raise SystemExit(f"TLS file not found: {f} (run deploy/setup-pi.sh or set TLS_CERT/TLS_KEY)")
-        serve(app, "0.0.0.0", cfg.listen_port, (str(cfg.tls_cert), str(cfg.tls_key)))
+        _bind(app, "127.0.0.1", args.port).serve_forever()
+        return
+    for f in (cfg.tls_cert, cfg.tls_key):
+        if not f.is_file():
+            raise SystemExit(f"TLS file not found: {f} (run deploy/setup-pi.sh or set TLS_CERT/TLS_KEY)")
+    tls = _bind(app, "0.0.0.0", cfg.listen_port, (str(cfg.tls_cert), str(cfg.tls_key)))
+    if cfg.local_http_port:  # only once the iPad port is up, so git-deploy's health check can't pass without it
+        local = _bind(app, "127.0.0.1", cfg.local_http_port)
+        threading.Thread(target=_serve_local, args=(local,), daemon=True).start()
+    tls.serve_forever()
 
 
-def serve(app: Flask, host: str, port: int, ssl_context=None) -> None:
+def _bind(app: Flask, host: str, port: int, ssl_context=None):
+    """Bind (and load the TLS cert) now; a failure exits non-zero instead of leaving a half-up kiosk."""
     # ceiling: the Werkzeug dev server does the TLS handshake in its single accept thread, so one stalled
     # client froze every request; a socket timeout bounds that stall to SOCKET_TIMEOUT_S. Upgrade: gunicorn
     # with gthread workers (handshakes off the accept path) if more clients or a busier network appear.
     socket.setdefaulttimeout(SOCKET_TIMEOUT_S)
-    app.run(host, port, threaded=True, ssl_context=ssl_context)
+    try:
+        srv = make_server(host, port, app, threaded=True, ssl_context=ssl_context)
+    except (OSError, SystemExit) as e:  # werkzeug calls sys.exit(1) when bind() fails; bad certs raise SSLError
+        log.critical("cannot listen on %s:%s: %s", host, port, e)
+        raise SystemExit(f"cannot listen on {host}:{port}: {e}") from None
+    log.info("listening on %s://%s:%s", "https" if ssl_context else "http", host, port)
+    return srv
+
+
+def _serve_local(srv) -> None:
+    try:
+        srv.serve_forever()
+    except BaseException:
+        log.critical("local HTTP listener on %s:%s died; git-deploy health checks will fail", srv.host, srv.port)
+        raise
 
 
 if __name__ == "__main__":

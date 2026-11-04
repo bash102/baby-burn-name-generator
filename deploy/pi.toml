@@ -1,0 +1,10 @@
+# git-deploy manifest (owner's pi-ops). Settings live in env_file, outside the clone; see docs/ops.md.
+service = "babyburn"
+install = "$HOME/.local/bin/uv sync -q --python 3.11 --frozen"
+start = ".venv/bin/python -m app.web"
+port = 9444                       # plain HTTP, 127.0.0.1 only (LOCAL_HTTP_PORT below)
+health = "http://127.0.0.1:9444/api/quiz"
+serve_port = 9445                 # tailscale serve --https=9445 -> 127.0.0.1:9444
+memory_max = "400M"               # measure: systemctl show app-babyburn -p MemoryPeak
+env_file = "~/.config/baby-burn/env"
+env = { LOCAL_HTTP_PORT = "9444" } # not in env_file: EnvironmentFile= overrides Environment=

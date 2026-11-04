@@ -675,23 +675,45 @@ def test_late_dusty_still_uploaded_after_kiosk_gives_up(tmp_path, sample_content
     assert f"tmp/{tok}/dusty.jpg" in k.keys()
 
 
-def _run_main(monkeypatch, argv, env, tmp_path):
-    calls = []
+@pytest.fixture(autouse=True)
+def _restore_socket_timeout():
+    import socket
+    yield
+    socket.setdefaulttimeout(None)  # web._bind sets a process-wide default
+
+
+class StubServer:
+    def __init__(self, binds, host, port, ssl_context):
+        self.host = host
+        binds.append((host, port, ssl_context))
+
+    def serve_forever(self):
+        pass
+
+
+def _fake_make_server(binds, fail_host=None):
+    def make(host, port, app, threaded, ssl_context=None):
+        assert threaded
+        if host == fail_host:
+            raise SystemExit(1)  # what werkzeug does when bind() fails
+        return StubServer(binds, host, port, ssl_context)
+    return make
+
+
+def _run_main(monkeypatch, argv, env, tmp_path, make=None):
+    binds = []
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setattr(web, "serve", lambda *a: calls.append(a))
+    monkeypatch.setattr(web, "make_server", make or _fake_make_server(binds))
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     web.main(argv)
-    return calls
+    return binds
 
 
 def test_main_tls_uses_configured_port_and_certs(tmp_path, monkeypatch):
-    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
-    cert.write_text("x")
-    key.write_text("x")
-    [(_, host, port, ctx)] = _run_main(
-        monkeypatch, [], {"LISTEN_PORT": "9443", "TLS_CERT": str(cert), "TLS_KEY": str(key)}, tmp_path)
-    assert (host, port, ctx) == ("0.0.0.0", 9443, (str(cert), str(key)))
+    env = _tls_env(tmp_path)
+    [(host, port, ctx)] = _run_main(monkeypatch, [], env, tmp_path)
+    assert (host, port, ctx) == ("0.0.0.0", 9443, (env["TLS_CERT"], env["TLS_KEY"]))
 
 
 def test_main_missing_cert_names_path(tmp_path, monkeypatch):
@@ -701,8 +723,84 @@ def test_main_missing_cert_names_path(tmp_path, monkeypatch):
 
 
 def test_main_dev_ignores_listen_port(tmp_path, monkeypatch):
-    [(_, host, port)] = _run_main(monkeypatch, ["--dev", "--port", "8123"], {"LISTEN_PORT": "9443"}, tmp_path)
-    assert (host, port) == ("127.0.0.1", 8123)
+    [(host, port, ctx)] = _run_main(monkeypatch, ["--dev", "--port", "8123"], {"LISTEN_PORT": "9443"}, tmp_path)
+    assert (host, port, ctx) == ("127.0.0.1", 8123, None)
+
+
+def _free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _tls_env(tmp_path):
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
+    cert.write_text("x")
+    key.write_text("x")
+    return {"TLS_CERT": str(cert), "TLS_KEY": str(key), "LISTEN_PORT": "9443"}
+
+
+def test_main_local_http_off_by_default(tmp_path, monkeypatch):
+    assert [b[0] for b in _run_main(monkeypatch, [], _tls_env(tmp_path), tmp_path)] == ["0.0.0.0"]
+
+
+def test_main_binds_tls_before_local_http(tmp_path, monkeypatch):
+    binds = _run_main(monkeypatch, [], {**_tls_env(tmp_path), "LOCAL_HTTP_PORT": "9444"}, tmp_path)
+    assert binds[0][:2] == ("0.0.0.0", 9443) and binds[1] == ("127.0.0.1", 9444, None)
+
+
+@pytest.mark.parametrize("fail_host, bound", [("0.0.0.0", []), ("127.0.0.1", ["0.0.0.0"])])
+def test_main_exits_nonzero_when_a_listener_cannot_bind(tmp_path, monkeypatch, caplog, fail_host, bound):
+    """A dead iPad port must stop the process, so git-deploy's loopback health check cannot pass."""
+    binds = []
+    with pytest.raises(SystemExit) as e:
+        _run_main(monkeypatch, [], {**_tls_env(tmp_path), "LOCAL_HTTP_PORT": "9444"}, tmp_path,
+                  make=_fake_make_server(binds, fail_host))
+    assert e.value.code not in (0, None) and fail_host in str(e.value)
+    assert [b[0] for b in binds] == bound
+    assert f"cannot listen on {fail_host}" in caplog.text
+
+
+def test_main_exits_on_bad_tls_cert(tmp_path, monkeypatch):
+    def make(host, port, app, threaded, ssl_context=None):
+        import ssl
+        raise ssl.SSLError("PEM lib")
+    with pytest.raises(SystemExit, match="0.0.0.0:9443"):
+        _run_main(monkeypatch, [], _tls_env(tmp_path), tmp_path, make=make)
+
+
+def test_local_listener_death_is_logged(caplog):
+    class Dying:
+        host, port = "127.0.0.1", 9444
+
+        def serve_forever(self):
+            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        web._serve_local(Dying())
+    assert "local HTTP listener on 127.0.0.1:9444 died" in caplog.text
+
+
+def test_main_serves_local_http_on_loopback_for_real(tmp_path, monkeypatch):
+    import urllib.request
+    from werkzeug.serving import make_server
+    port, binds, real = _free_port(), [], []
+    stub = _fake_make_server(binds)
+
+    def make(host, p, app, threaded, ssl_context=None):
+        if host != "127.0.0.1":
+            return stub(host, p, app, threaded, ssl_context)  # the TLS one is only recorded
+        real.append(make_server(host, p, app, threaded=threaded))
+        return real[-1]
+
+    try:
+        _run_main(monkeypatch, [], {**_tls_env(tmp_path), "LOCAL_HTTP_PORT": str(port)}, tmp_path, make=make)
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/quiz", timeout=5) as r:
+            assert r.status == 200
+    finally:
+        for srv in real:
+            srv.shutdown()
+            srv.server_close()
 
 
 def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir, monkeypatch):
@@ -721,9 +819,10 @@ def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir,
     old = socket.getdefaulttimeout()
     ctx = ssl._create_unverified_context()
     url = f"https://127.0.0.1:{port}/kiosk.html"
-    idle = None
+    idle = srv = None
     try:
-        threading.Thread(target=web.serve, args=(app, "127.0.0.1", port, "adhoc"), daemon=True).start()
+        srv = web._bind(app, "127.0.0.1", port, "adhoc")
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
         deadline = time.monotonic() + 20
         while True:  # wait until it answers
             try:
@@ -741,6 +840,9 @@ def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir,
         socket.setdefaulttimeout(old)
         if idle:
             idle.close()
+        if srv:
+            srv.shutdown()
+            srv.server_close()
 
 
 def test_quiz_payload_has_retention_days(tmp_path, sample_content_dir):

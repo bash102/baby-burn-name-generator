@@ -146,26 +146,31 @@ Re-runs: values already in `.env` (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`) win ove
 
 Brother QL-800: turn **Editor Lite off** (the green light on the unit must be off, hold the button until it goes out). Load Brother DK-1234 (DK-11234 outside the US): 60 × 86 mm die-cut name badges; keep a spare roll.
 
-**Calibrate print alignment.** From the app directory (`cd ~/apps/baby-burn-name-generator`, or wherever you installed it), print a test badge with trial offsets (units, directions and range are in `.env.example`). Each try prints a real label, so keep spares:
+**Calibrate print alignment.** From the app directory (`cd ~/apps/baby-burn-name-generator`, or wherever you installed it), print a test badge with trial offsets (units, directions and range are in `.env.example`). Each try prints a real label, so keep spares. First name your install type (section 11):
 ```
-~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --border ticket_notches --offset-x -6 --offset-y -13
+UNIT=babyburn ENVF=.env                          # setup-pi install
+UNIT=app-babyburn ENVF=~/.config/baby-burn/env   # git-deploy install (run only the line that applies)
+~/.local/bin/uv run --env-file "$ENVF" python tools/test_print.py "Lil' Gnomesayer" --border ticket_notches --offset-x -6 --offset-y -13
 ```
-Always pass `--border ticket_notches` (the thickest border) so every try is comparable. Without it the border is random. Offsets beyond +/-25 will clip the border's outer edge; if you need more, raise SAFE_INSET_PX in app/badge.py. Units and range are in `.env.example`. Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
+Always pass `--border ticket_notches` (the thickest border) so every try is comparable. Without it the border is random. Offsets beyond +/-25 will clip the border's outer edge; if you need more, raise SAFE_INSET_PX in app/badge.py. Units and range are in `.env.example`. Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `$ENVF`, run `sudo systemctl restart $UNIT`, and confirm with a plain run (no flags, so it uses the settings file):
 ```
-~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"
+~/.local/bin/uv run --env-file "$ENVF" python tools/test_print.py "Lil' Gnomesayer"
 ```
 (Full `uv` path because it may not be on PATH yet in a fresh SSH session.)
 
 ## 6. Go-live checklist
 
-- [ ] `~/.local/bin/uv run --env-file .env python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
-- [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `.env`.
-- [ ] Test print: `~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
+Set `ENVF` first, as in section 5.
+
+- [ ] `~/.local/bin/uv run --env-file "$ENVF" python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
+- [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `$ENVF`.
+- [ ] Test print: `~/.local/bin/uv run --env-file "$ENVF" python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
 - [ ] Bucket lifecycle rule on `tmp/` matches `RETENTION_DAYS` in `app/photos.py` (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
 - [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
 - [ ] Cloud check, run on the Pi: `~/.local/bin/uv run --env-file .env python tools/cloud_check.py`. It puts, copies and batch-deletes a test page with the kiosk's own client, prints a URL, and waits for Enter. Open the URL on a phone on cellular (page loads), then open the bucket root URL (no listing), then press Enter.
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
+- [ ] Pause auto-updates (git-deploy installs, section 11): admin Updates panel or `git-deploy pause baby-burn-name-generator --reason party`.
 - [ ] Freeze (section 8): after the last rehearsal, reset names and album so the party starts clean.
 
 ## 7. Party night
@@ -187,25 +192,30 @@ If something breaks:
 |---|---|---|
 | Badge jam or out of labels | Open the lid, clear or reseat the roll, press **Reprint** | "Badge jammed! Grab a volunteer." |
 | Printer unplugged | Plug it back in, then press **Reprint** in `/admin` | "Badge jammed! Grab a volunteer." and they keep their name |
-| Kiosk frozen | Triple-click the side/top button to exit Guided Access, close and relaunch the Home Screen app, re-enable Guided Access. If still frozen, on the Pi: `sudo systemctl restart babyburn` | Back to the start screen |
+| Kiosk frozen | Triple-click the side/top button to exit Guided Access, close and relaunch the Home Screen app, re-enable Guided Access. If still frozen, on the Pi: `sudo systemctl restart babyburn` (git-deploy install: `app-babyburn`) | Back to the start screen |
 | No internet | Nothing; badges still print | Photos fall back to the dust filter; the phone QR link fails |
 
-Logs: `journalctl -u babyburn -f` on the Pi.
+Logs: `journalctl -u babyburn -f` on the Pi (git-deploy install: `journalctl -u app-babyburn -f`).
 
 ## 8. Freeze (Fri 11-13)
 
 After the last rehearsal, reset the event so the party starts clean: every name is available again, the shared album is empty and no rehearsal photos are left on the Pi. Run this ON THE PI, not your Mac: the album index (`data/album.sqlite3`) and the name database live there.
 
 ```
-sudo systemctl stop babyburn
-cd ~/baby-burn-name-generator && ~/.local/bin/uv run --env-file .env python tools/reset_event.py   # type yes
-sudo systemctl start babyburn
+UNIT=babyburn ENVF=.env                          # setup-pi install
+UNIT=app-babyburn ENVF=~/.config/baby-burn/env   # git-deploy install (run only the line that applies)
+sudo systemctl stop $UNIT
+cd <clone> && ~/.local/bin/uv run --env-file "$ENVF" python tools/reset_event.py   # type yes
+sudo systemctl start $UNIT
 ```
+
+`<clone>` is `~/baby-burn-name-generator` or `~/apps/baby-burn-name-generator`. `reset_event.py` refuses to run while either `babyburn` or `app-babyburn` is active and prints which to stop.
 
 `reset_event.py` deletes `data/names.sqlite3`, empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
 
 ## 9. After the party
 
+- Resume auto-updates (git-deploy installs): admin Updates panel, or `git-deploy resume baby-burn-name-generator`.
 - Copy `data/album/` off the Pi (backup of shared photos).
 - Unshared photos vanish after `RETENTION_DAYS` in `app/photos.py` (and the matching R2 rule). Album photos stay until you delete the `album/` prefix in the R2 dashboard.
 
@@ -222,3 +232,67 @@ CONTENT_DIR=<path to private content clone> ADMIN_PIN=<pin> uv run --env-file .e
 On the Pi, use a strong `ADMIN_PIN`: anyone on the party Wi-Fi can reach `/admin`.
 
 Approve and Reject edit the YAML files in your clone. Commit them there when you finish.
+
+## 11. Auto-update (git-deploy)
+
+On git-deploy installs the service is `app-babyburn` and settings live in `~/.config/baby-burn/env`; on setup-pi installs it's `babyburn` and `.env`.
+
+The alternative to `deploy/setup-pi.sh` (sections 2-3 still work unchanged): the owner's git-deploy system installs and updates the kiosk from `deploy/pi.toml`.
+
+**How it works.** Merge to `main` → a webhook (or the 10-minute timer) triggers a deploy: pull, restart `app-babyburn.service`, then a 30 s health check on `http://127.0.0.1:9444/api/quiz`. The install step (`uv sync`) runs only on the first install or when `pyproject.toml` or `deploy/pi.toml` change.
+
+**Rule: every dependency change touches `pyproject.toml`.** A change to `uv.lock` alone is deployed without `uv sync`, so the new code runs against the old `.venv`. When you only re-lock (e.g. `uv lock --upgrade-package x`), also raise that package's lower bound in `pyproject.toml` (Ruling R55).
+
+**When a deploy fails** the app is blocked from further deploys until `git-deploy unblock baby-burn-name-generator`, and there is no rollback:
+- `unhealthy` (health check failed for 30 s): the NEW code stays running, or crash-looping.
+- `install-failed` (`uv sync` or unit install failed): the new code is on disk; the old process keeps running until something restarts it, then it runs the new code.
+
+So pause during the party (below), and fix forward, or `git revert` the bad commit and merge that; then unblock and `git-deploy sync baby-burn-name-generator`.
+
+**Ports.** The kiosk keeps its TLS LAN listener (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`; iPad stays on `https://raspberryfly.local:9443`) and also serves plain HTTP on `127.0.0.1:9444` (`LOCAL_HTTP_PORT`, set in `pi.toml`; 0 or unset = off). git-deploy health-checks that port and publishes it with `tailscale serve --https=9445`. The kiosk binds the TLS port first and exits if either port cannot be bound, so a passing health check means the iPad port is up too.
+
+**Settings.** For git-deploy installs they live in `~/.config/baby-burn/env` (mode 600, outside the clone; the unit loads it as `EnvironmentFile=`), not in `.env` in the repo. It holds the same keys as `.env` (`ADMIN_PIN`, `LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`, `PRINTER`, `TRANSFORM_PROVIDER`, provider and R2 keys, `CONTENT_DIR`). Relative paths for `TLS_CERT`/`TLS_KEY`/`CONTENT_DIR` resolve against the clone; absolute paths also work. `LISTEN_PORT` must be 1024 or higher (the git-deploy unit has no capability to bind low ports). Do not put `LOCAL_HTTP_PORT` in this file: `EnvironmentFile=` overrides the unit's `Environment=`, and `pi.toml` is its single source. Run the tools against it by swapping `--env-file .env` for `--env-file ~/.config/baby-burn/env`, e.g.:
+
+```
+cd ~/apps/baby-burn-name-generator && ~/.local/bin/uv run --env-file ~/.config/baby-burn/env python tools/test_print.py "Lil' Gnomesayer"
+```
+
+**Before the party: pause.** Stop surprise restarts: admin Updates panel › Pause, or `git-deploy pause baby-burn-name-generator --reason party`. `git-deploy status baby-burn-name-generator` shows a `PAUSED` line while paused (and a `BLOCKED` line after a failed deploy); the admin panel highlights both.
+
+**Update now.** Admin › Update now runs `git-deploy sync baby-burn-name-generator --force` in its own transient systemd unit (`sudo -n systemd-run`, so the app user needs the passwordless sudo git-deploy already uses), so restarting the kiosk does not kill it. It restarts the kiosk only if there is a new version, so the admin page may drop for a few seconds; output goes to `data/git-deploy-sync.log`. Check the panel a minute later. Do it between guests, not during a badge. If a deploy is running, Pause/Resume answer "a deploy is running — retry in a minute".
+
+**After the party: resume.** Admin › Resume, or `git-deploy resume baby-burn-name-generator`.
+
+### Migrating raspberryfly from setup-pi to git-deploy
+
+From the current setup-pi install in `~/apps/baby-burn-name-generator` (section 2, last subsection). Run on the Pi as `bash102`.
+
+1. Preflight. Nothing may be listening on 9444 or 9445:
+   ```
+   ss -ltn | grep -E ':(9444|9445) '
+   tailscale serve status
+   ```
+   (`tailscale serve status` lists the other apps; it must show nothing on 9445.)
+2. Move the settings out of the clone:
+   ```
+   install -d -m 700 ~/.config/baby-burn && install -m 600 ~/apps/baby-burn-name-generator/.env ~/.config/baby-burn/env
+   ```
+   Check `LISTEN_PORT` in it is 1024 or higher (9443 is), and that it has no `LOCAL_HTTP_PORT` line (`pi.toml` owns it). From now on edit `~/.config/baby-burn/env`; the `.env` left in the clone is a stale copy that only the rollback below uses.
+3. Stop and disable the old unit:
+   ```
+   sudo systemctl disable --now babyburn
+   ```
+4. Install with git-deploy:
+   ```
+   git-deploy install baby-burn-name-generator
+   ```
+   It reuses the existing clone at `~/apps/baby-burn-name-generator` (it clones only when the directory is missing) and the existing `.venv`, so `data/`, `certs/`, `content/` and `.venv` are kept. Do NOT re-clone or delete the directory first.
+5. Webhook: add the GitHub webhook per the pi-ops README step 6, or rely on the 10-minute timer.
+6. Verify:
+   ```
+   git-deploy status baby-burn-name-generator      # active, env_file ok, no BLOCKED line
+   systemctl is-active app-emporia-data app-dsdigest git-webhook   # the other apps: all "active"
+   ```
+   On the iPad, `https://raspberryfly.local:9443/kiosk.html` loads.
+
+Rollback: `git-deploy pause baby-burn-name-generator --reason rollback && sudo systemctl disable --now app-babyburn && sudo systemctl enable --now babyburn` (the old unit still reads `.env` in the clone; the pause stops later merges from pulling new code under it).
