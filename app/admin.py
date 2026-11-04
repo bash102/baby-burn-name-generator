@@ -131,7 +131,6 @@ def update(action):
     exe = shutil.which("git-deploy")
     if not exe:
         return jsonify(error="git-deploy is not installed"), 503
-    _status_cache["at"] = float("-inf")  # the next /admin load shows the new state
     try:
         r = _gd(_detached(exe, args) if action == "sync" else [exe, *args])
     except subprocess.TimeoutExpired:
@@ -139,6 +138,9 @@ def update(action):
     except (OSError, subprocess.SubprocessError) as e:
         log.exception("git-deploy %s failed", action)
         return jsonify(error=str(e) or type(e).__name__), 502
+    finally:
+        # Cleared after the action, so a page load during it can't re-cache the old state.
+        _status_cache["at"] = float("-inf")
     if r.returncode:
         return jsonify(error=(r.stdout + r.stderr).strip() or f"exit {r.returncode}"), 502
     return jsonify(ok=True)

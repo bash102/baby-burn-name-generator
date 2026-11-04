@@ -160,9 +160,11 @@ Always pass `--border ticket_notches` (the thickest border) so every try is comp
 
 ## 6. Go-live checklist
 
-- [ ] `~/.local/bin/uv run --env-file .env python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
-- [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `.env`.
-- [ ] Test print: `~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
+Set `ENVF` first, as in section 5.
+
+- [ ] `~/.local/bin/uv run --env-file "$ENVF" python -m app.content content/` shows the approved counts you expect (names well above the low-names warning).
+- [ ] `TRANSFORM_PROVIDER` is not `fake` and `OPENAI_API_KEY` / `GEMINI_API_KEY` is set in `$ENVF`.
+- [ ] Test print: `~/.local/bin/uv run --env-file "$ENVF" python tools/test_print.py "Lil' Gnomesayer"`; badge is legible and aligned.
 - [ ] Spare label roll on hand; Editor Lite off.
 - [ ] Bucket lifecycle rule on `tmp/` matches `RETENTION_DAYS` in `app/photos.py` (`npx wrangler r2 bucket lifecycle list baby-burn-photos`).
 - [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
@@ -265,17 +267,17 @@ cd ~/apps/baby-burn-name-generator && ~/.local/bin/uv run --env-file ~/.config/b
 
 From the current setup-pi install in `~/apps/baby-burn-name-generator` (section 2, last subsection). Run on the Pi as `bash102`.
 
-1. Preflight. Both must print nothing on 9444/9445:
+1. Preflight. Nothing may be listening on 9444 or 9445:
    ```
    ss -ltn | grep -E ':(9444|9445) '
    tailscale serve status
    ```
-   (`tailscale serve status` must show nothing on 9445.)
+   (`tailscale serve status` lists the other apps; it must show nothing on 9445.)
 2. Move the settings out of the clone:
    ```
    install -d -m 700 ~/.config/baby-burn && install -m 600 ~/apps/baby-burn-name-generator/.env ~/.config/baby-burn/env
    ```
-   Check `LISTEN_PORT` in it is 1024 or higher (9443 is), and that it has no `LOCAL_HTTP_PORT` line (`pi.toml` owns it).
+   Check `LISTEN_PORT` in it is 1024 or higher (9443 is), and that it has no `LOCAL_HTTP_PORT` line (`pi.toml` owns it). From now on edit `~/.config/baby-burn/env`; the `.env` left in the clone is a stale copy that only the rollback below uses.
 3. Stop and disable the old unit:
    ```
    sudo systemctl disable --now babyburn
@@ -293,4 +295,4 @@ From the current setup-pi install in `~/apps/baby-burn-name-generator` (section 
    ```
    On the iPad, `https://raspberryfly.local:9443/kiosk.html` loads.
 
-Rollback: `sudo systemctl disable --now app-babyburn && sudo systemctl enable --now babyburn` (the old unit still reads `.env` in the clone).
+Rollback: `git-deploy pause baby-burn-name-generator --reason rollback && sudo systemctl disable --now app-babyburn && sudo systemctl enable --now babyburn` (the old unit still reads `.env` in the clone; the pause stops later merges from pulling new code under it).

@@ -52,7 +52,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% if updates %}{% for f in updates.flags %}<div class="banner warn">{{ f }}</div>{% endfor %}
 <pre>{{ updates.status }}</pre>
 <p><button data-post="/admin/update/pause">Pause</button> <button data-post="/admin/update/resume">Resume</button>
-<button data-post="/admin/update/sync">Update now</button> (restarts the kiosk; log: data/git-deploy-sync.log)</p>
+<button data-post="/admin/update/sync">Update now</button> (restarts the kiosk only if there is a new version; log: data/git-deploy-sync.log)</p>
 {% else %}<p>git-deploy is not installed on this machine, so auto-updates are not managed here.</p>{% endif %}
 <h2>Printing</h2>
 <p><button data-post="/admin/test-print">Test print</button></p>
