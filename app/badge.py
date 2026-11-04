@@ -13,11 +13,14 @@ TEXT_FONT = FONT_DIR / "Lato-Bold.ttf"
 W, H = 954, 672
 DPI = 300
 FIRST_BURN_PT = 12
-FRAME_PX = 30  # border art lives in this outer band
-MARGIN_PX = 50
+# Border art is drawn inset this far from every edge, so print-offset calibration
+# (BADGE_OFFSET up to +/-SAFE_INSET_PX dots) never clips it in printer.shift.
+SAFE_INSET_PX = 25
+FRAME_PX = 30  # border art lives in this band, just inside the inset
+MARGIN_PX = SAFE_INSET_PX + 50  # text/QR clear of the inset border
 NAME_MAX_PT, NAME_MIN_PT, NAME_MAX_LINES = 60, 8, 2  # 8 pt is the hard floor: shrink, never clip
 # Full width, sits above the QR corner so the two can never overlap.
-NAME_BOX = (MARGIN_PX, MARGIN_PX, W - MARGIN_PX, 335)
+NAME_BOX = (MARGIN_PX, MARGIN_PX, W - MARGIN_PX, 335 - SAFE_INSET_PX)
 
 TAGLINE_MAX_PT = 20
 TAGLINE_NAME_RATIO = 0.45  # tagline never outgrows 45% of the name's size
@@ -158,18 +161,18 @@ def _draw_qr(d, url):
     d.text(((x0 + x0 + side) / 2, y1 + 4), "your photo", font=cap, fill=0, anchor="mt")
 
 
-def _sun_rays(d, rng):
+def _sun_rays(d, rng, w, h):
     step = 38
-    for x in range(0, W, step):
+    for x in range(0, w, step):
         d.polygon([(x, 0), (x + step, 0), (x + step // 2, FRAME_PX - 4)], fill=0)
-        d.polygon([(x, H), (x + step, H), (x + step // 2, H - FRAME_PX + 4)], fill=0)
-    for y in range(0, H, step):
+        d.polygon([(x, h), (x + step, h), (x + step // 2, h - FRAME_PX + 4)], fill=0)
+    for y in range(0, h, step):
         d.polygon([(0, y), (0, y + step), (FRAME_PX - 4, y + step // 2)], fill=0)
-        d.polygon([(W, y), (W, y + step), (W - FRAME_PX + 4, y + step // 2)], fill=0)
+        d.polygon([(w, y), (w, y + step), (w - FRAME_PX + 4, y + step // 2)], fill=0)
 
 
-def _dust_dots(d, rng):
-    bands = [(0, 0, W, FRAME_PX), (0, H - FRAME_PX, W, H), (0, 0, FRAME_PX, H), (W - FRAME_PX, 0, W, H)]
+def _dust_dots(d, rng, w, h):
+    bands = [(0, 0, w, FRAME_PX), (0, h - FRAME_PX, w, h), (0, 0, FRAME_PX, h), (w - FRAME_PX, 0, w, h)]
     for x0, y0, x1, y1 in bands:
         for _ in range((x1 - x0) * (y1 - y0) // 60):
             r = rng.choice((1, 1, 2, 2, 3, 4))
@@ -177,15 +180,15 @@ def _dust_dots(d, rng):
             d.ellipse((x - r, y - r, x + r, y + r), fill=0)
 
 
-def _ticket_notches(d, rng):
-    d.rectangle((0, 0, W - 1, H - 1), outline=0, width=FRAME_PX - 12)
-    d.rectangle((FRAME_PX - 6, FRAME_PX - 6, W - FRAME_PX + 5, H - FRAME_PX + 5), outline=0, width=3)
+def _ticket_notches(d, rng, w, h):
+    d.rectangle((0, 0, w - 1, h - 1), outline=0, width=FRAME_PX - 12)
+    d.rectangle((FRAME_PX - 6, FRAME_PX - 6, w - FRAME_PX + 5, h - FRAME_PX + 5), outline=0, width=3)
     # semicircular punches on the long edges, like a torn ticket
-    for x in range(60, W - 40, 80):
-        for y in (0, H):
+    for x in range(60, w - 40, 80):
+        for y in (0, h):
             d.ellipse((x - 14, y - 14, x + 14, y + 14), fill=255, outline=0, width=3)
-    for y in (0, H):
-        d.line((0, y, W, y), fill=0, width=3)
+    for y in (0, h):
+        d.line((0, y, w, y), fill=0, width=3)
 
 
 _DRAW = {"sun_rays": _sun_rays, "dust_dots": _dust_dots, "ticket_notches": _ticket_notches}
@@ -196,8 +199,11 @@ def render_badge(name: str, tagline: str, first_burn: int | None, qr_url: str | 
     rng = rng or random.Random()
     border = border or rng.choice(BORDERS)
     img = Image.new("L", (W, H), 255)
+    w, h = W - 2 * SAFE_INSET_PX, H - 2 * SAFE_INSET_PX
+    art = Image.new("L", (w, h), 255)
+    _DRAW[border](ImageDraw.Draw(art), rng, w, h)
+    img.paste(art, (SAFE_INSET_PX, SAFE_INSET_PX))
     d = ImageDraw.Draw(img)
-    _DRAW[border](d, rng)
 
     # tagline + first-burn live left of the QR (full width without one)
     right = QR_BOX[0] - 20 if qr_url else W - MARGIN_PX

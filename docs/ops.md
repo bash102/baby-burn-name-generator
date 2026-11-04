@@ -148,9 +148,9 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 
 **Calibrate print alignment.** From the app directory (`cd ~/apps/baby-burn-name-generator`, or wherever you installed it), print a test badge with trial offsets (units, directions and range are in `.env.example`). Each try prints a real label, so keep spares:
 ```
-~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --offset-x -6 --offset-y -13
+~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --border ticket_notches --offset-x -6 --offset-y -13
 ```
-Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
+Always pass `--border ticket_notches` (the thickest border) so every try is comparable. Without it the border is random. Offsets beyond +/-25 will clip the border's outer edge; if you need more, raise SAFE_INSET_PX in app/badge.py. Units and range are in `.env.example`. Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
 ```
 ~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"
 ```

@@ -98,3 +98,19 @@ def test_test_print_defaults_from_env(monkeypatch, capsys):
     assert "offset x=-6 y=-13" in capsys.readouterr().out
     test_print.main(["x", "file", "--offset-x", "3"])
     assert "offset x=3 y=-13" in capsys.readouterr().out
+
+
+def test_test_print_rejects_unknown_border(capsys):
+    from tools import test_print
+    with pytest.raises(SystemExit):
+        test_print.main(["x", "file", "--border", "bogus"])
+
+
+def test_test_print_passes_chosen_border(monkeypatch, capsys):
+    from tools import test_print
+    seen = {}
+    monkeypatch.setattr(test_print, "render_badge", lambda *a, **k: seen.update(k) or Image.new("1", (954, 672), 1))
+    monkeypatch.setattr(test_print, "make_printer", lambda t, d, off: lambda img: None)
+    test_print.main(["x", "file", "--border", "ticket_notches"])
+    assert seen["border"] == "ticket_notches"
+    assert "border=ticket_notches" in capsys.readouterr().out
