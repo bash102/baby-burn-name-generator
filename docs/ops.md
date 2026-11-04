@@ -150,7 +150,7 @@ Brother QL-800: turn **Editor Lite off** (the green light on the unit must be of
 ```
 ~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer" --border ticket_notches --offset-x -6 --offset-y -13
 ```
-Always pass `--border ticket_notches` (the heaviest edge) so every try is comparable; without it the border is random. Borders are inset 25 dots, so offsets beyond +/-25 may clip the border. Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
+Always pass `--border ticket_notches` (the thickest border) so every try is comparable. Without it the border is random. Offsets beyond +/-25 will clip the border's outer edge; if you need more, raise SAFE_INSET_PX in app/badge.py. Units and range are in `.env.example`. Re-run with different offsets until the left/right and top/bottom margins match. Then write the values to `BADGE_OFFSET_X` / `BADGE_OFFSET_Y` in `.env`, run `sudo systemctl restart babyburn`, and confirm with a plain run (no flags, so it uses `.env`):
 ```
 ~/.local/bin/uv run --env-file .env python tools/test_print.py "Lil' Gnomesayer"
 ```

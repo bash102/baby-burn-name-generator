@@ -4,8 +4,8 @@ import pytest
 from PIL import ImageChops
 
 from app import badge
-from app.printer import shift
 from app.badge import BORDERS, NAME_BOX, NAME_MIN_PT, fit_name, render_badge
+from app.printer import shift
 
 LONG = "Captain Moist Towelette of Hole Foods and Friends"[:40]
 QR = "https://photos.example.com/p/aaaaaaaaaaaaaaaaaaaaaa"
@@ -57,13 +57,12 @@ def test_each_border_draws_ink_on_edges(style):
 def test_ink_stays_inside_safe_inset_and_survives_shift(style, name, qr):
     img = render(border=style, name=name, qr_url=qr)
     s = badge.SAFE_INSET_PX
-    inv = img.convert("L").point(lambda v: 255 - v)
+    inv = ImageChops.invert(img.convert("L"))
     x0, y0, x1, y1 = inv.getbbox()
     assert x0 >= s and y0 >= s and x1 <= badge.W - s and y1 <= badge.H - s
-    ink = lambda im: im.convert("L").histogram()[0]
     for dx in (-s, s):
         for dy in (-s, s):
-            assert ink(shift(img, dx, dy)) == ink(img), (dx, dy)
+            assert shift(img, dx, dy).convert("L").histogram()[0] == img.convert("L").histogram()[0], (dx, dy)
 
 
 def test_no_first_burn_line_when_none():
