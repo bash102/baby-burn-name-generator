@@ -89,6 +89,18 @@ def test_bad_listen_port_raises(val):
         Config.from_env({"LISTEN_PORT": val})
 
 
+def test_local_http_port_default_off_and_from_env():
+    assert Config.from_env({}).local_http_port == 0
+    assert Config.from_env({"LOCAL_HTTP_PORT": "9444"}).local_http_port == 9444
+    assert Config.from_env({"LOCAL_HTTP_PORT": "0"}).local_http_port == 0
+
+
+@pytest.mark.parametrize("val", ["-1", "65536", "abc"])
+def test_bad_local_http_port_raises(val):
+    with pytest.raises(ValueError, match="LOCAL_HTTP_PORT"):
+        Config.from_env({"LOCAL_HTTP_PORT": val})
+
+
 def test_empty_s3_endpoint_is_none():
     assert Config.from_env({"S3_ENDPOINT_URL": ""}).s3_endpoint_url is None
 

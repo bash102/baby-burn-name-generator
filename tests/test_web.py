@@ -705,6 +705,52 @@ def test_main_dev_ignores_listen_port(tmp_path, monkeypatch):
     assert (host, port) == ("127.0.0.1", 8123)
 
 
+def _free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _tls_env(tmp_path):
+    cert, key = tmp_path / "c.pem", tmp_path / "k.pem"
+    cert.write_text("x")
+    key.write_text("x")
+    return {"TLS_CERT": str(cert), "TLS_KEY": str(key), "LISTEN_PORT": "9443"}
+
+
+def test_main_local_http_off_by_default(tmp_path, monkeypatch):
+    calls = _run_main(monkeypatch, [], _tls_env(tmp_path), tmp_path)
+    assert [c[1] for c in calls] == ["0.0.0.0"]
+
+
+def test_main_serves_tls_and_local_http_on_loopback_only(tmp_path, monkeypatch):
+    import urllib.request
+    port, calls, real = _free_port(), [], web.serve
+
+    def fake(app, host, p, ctx=None):
+        calls.append((host, p, ctx))
+        if host == "127.0.0.1":
+            real(app, host, p, ctx)  # really listen; the TLS one is only recorded
+
+    monkeypatch.setattr(web, "serve", fake)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    for k, v in {**_tls_env(tmp_path), "LOCAL_HTTP_PORT": str(port)}.items():
+        monkeypatch.setenv(k, v)
+    web.main([])
+    assert ("0.0.0.0", 9443) in [c[:2] for c in calls]  # thread start order is not defined
+    deadline = time.time() + 5
+    while True:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/quiz", timeout=2) as r:
+                assert r.status == 200
+                break
+        except OSError:
+            assert time.time() < deadline, "local HTTP listener never answered"
+            time.sleep(0.05)
+    assert ("127.0.0.1", port, None) in calls
+
+
 def test_stalled_tls_client_does_not_freeze_server(tmp_path, sample_content_dir, monkeypatch):
     """A client that connects and never sends a TLS ClientHello must not block other requests."""
     import socket

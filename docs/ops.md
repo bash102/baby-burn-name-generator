@@ -166,6 +166,7 @@ Re-run with different offsets until the left/right and top/bottom margins match.
 - [ ] `timedatectl` shows `System clock synchronized: yes` (badge and photo-page dates depend on it).
 - [ ] Cloud check, run on the Pi: `~/.local/bin/uv run --env-file .env python tools/cloud_check.py`. It puts, copies and batch-deletes a test page with the kiosk's own client, prints a URL, and waits for Enter. Open the URL on a phone on cellular (page loads), then open the bucket root URL (no listing), then press Enter.
 - [ ] iPad cert trusted, Home Screen icon works, Guided Access on.
+- [ ] Pause auto-updates (git-deploy installs, section 11): admin Updates panel or `git-deploy pause baby-burn-name-generator --reason party`.
 - [ ] Freeze (section 8): after the last rehearsal, reset names and album so the party starts clean.
 
 ## 7. Party night
@@ -206,6 +207,7 @@ sudo systemctl start babyburn
 
 ## 9. After the party
 
+- Resume auto-updates (git-deploy installs): admin Updates panel, or `git-deploy resume baby-burn-name-generator`.
 - Copy `data/album/` off the Pi (backup of shared photos).
 - Unshared photos vanish after `RETENTION_DAYS` in `app/photos.py` (and the matching R2 rule). Album photos stay until you delete the `album/` prefix in the R2 dashboard.
 
@@ -222,3 +224,25 @@ CONTENT_DIR=<path to private content clone> ADMIN_PIN=<pin> uv run --env-file .e
 On the Pi, use a strong `ADMIN_PIN`: anyone on the party Wi-Fi can reach `/admin`.
 
 Approve and Reject edit the YAML files in your clone. Commit them there when you finish.
+
+## 11. Auto-update (git-deploy)
+
+The alternative to `deploy/setup-pi.sh` (sections 2-3 still work unchanged): the owner's git-deploy system installs and updates the kiosk from `deploy/pi.toml`.
+
+**How it works.** Merge to `main` → a webhook (or the 10-minute timer) triggers a deploy: `uv sync`, restart `app-babyburn.service`, then a 30 s health check on `http://127.0.0.1:9444/api/quiz`. If the deploy fails, the app is blocked from further deploys and keeps running the last good code until you run `git-deploy unblock baby-burn-name-generator`.
+
+**Ports.** The kiosk keeps its TLS LAN listener (`LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`; iPad stays on `https://raspberryfly.local:9443`) and also serves plain HTTP on `127.0.0.1:9444` (`LOCAL_HTTP_PORT`, set in `pi.toml`; 0 or unset = off). git-deploy health-checks that port and publishes it with `tailscale serve --https=9445`.
+
+**Settings.** For git-deploy installs they live in `~/.config/baby-burn/env` (mode 600, outside the clone; the unit loads it as `EnvironmentFile=`), not in `.env` in the repo. It holds the same keys as `.env` (`ADMIN_PIN`, `LISTEN_PORT`, `TLS_CERT`, `TLS_KEY`, `PRINTER`, `TRANSFORM_PROVIDER`, provider and R2 keys, `CONTENT_DIR`). Use absolute paths for `TLS_CERT`/`TLS_KEY`/`CONTENT_DIR`. `LOCAL_HTTP_PORT` is not in this file; `pi.toml` is its single source. Run the tools against it by swapping `--env-file .env` for `--env-file ~/.config/baby-burn/env`, e.g.:
+
+```
+cd <clone> && ~/.local/bin/uv run --env-file ~/.config/baby-burn/env python tools/test_print.py "Lil' Gnomesayer"
+```
+
+**Before the party: pause.** Stop surprise restarts: admin Updates panel › Pause, or `git-deploy pause baby-burn-name-generator --reason party`. `git-deploy status baby-burn-name-generator` shows a PAUSED line while paused.
+
+**Update now.** Admin › Update now (`git-deploy sync baby-burn-name-generator --force`) deploys main immediately. It restarts the kiosk, so the admin page drops for a few seconds; output goes to `data/git-deploy-sync.log`. Do it between guests, not during a badge.
+
+**After the party: resume.** Admin › Resume, or `git-deploy resume baby-burn-name-generator`.
+
+The Updates panel only appears when `git-deploy` is on the app's PATH; otherwise it shows a note.

@@ -2,6 +2,8 @@
 import hmac
 import logging
 import re
+import shutil
+import subprocess
 from io import BytesIO
 from urllib.parse import quote, urlparse
 
@@ -61,6 +63,55 @@ def _body():
     return d
 
 
+GIT_DEPLOY_APP = "baby-burn-name-generator"
+GIT_DEPLOY_TIMEOUT_S = 15
+UPDATE_ARGS = {  # action -> git-deploy args; sync restarts this very app, so it runs detached
+    "pause": ["pause", GIT_DEPLOY_APP, "--reason", "paused from admin"],
+    "resume": ["resume", GIT_DEPLOY_APP],
+    "sync": ["sync", GIT_DEPLOY_APP, "--force"],
+}
+
+
+def _updates():
+    """Dashboard data for the Updates panel; None when git-deploy is not installed."""
+    exe = shutil.which("git-deploy")
+    if not exe:
+        return None
+    try:
+        r = subprocess.run([exe, "status", GIT_DEPLOY_APP], capture_output=True, text=True,
+                           timeout=GIT_DEPLOY_TIMEOUT_S, stdin=subprocess.DEVNULL)
+        text = (r.stdout + r.stderr).strip() or f"git-deploy status exited {r.returncode}"
+    except (OSError, subprocess.SubprocessError) as e:
+        text = f"git-deploy status failed: {e}"
+    return {"status": text, "paused": next((ln for ln in text.splitlines() if "PAUSED" in ln), None)}
+
+
+@bp.post("/update/<action>")
+def update(action):
+    args = UPDATE_ARGS.get(action)
+    if args is None:
+        abort(404)
+    exe = shutil.which("git-deploy")
+    if not exe:
+        return jsonify(error="git-deploy is not installed"), 503
+    try:
+        if action == "sync":
+            log_path = _st().cfg.data_dir / "git-deploy-sync.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "ab") as out:  # the child keeps its own duplicate of the fd
+                subprocess.Popen([exe, *args], stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                 start_new_session=True)
+        else:
+            r = subprocess.run([exe, *args], capture_output=True, text=True,
+                               timeout=GIT_DEPLOY_TIMEOUT_S, stdin=subprocess.DEVNULL)
+            if r.returncode:
+                return jsonify(error=(r.stdout + r.stderr).strip() or f"exit {r.returncode}"), 502
+    except (OSError, subprocess.SubprocessError) as e:
+        log.exception("git-deploy %s failed", action)
+        return jsonify(error=str(e) or type(e).__name__), 502
+    return jsonify(ok=True)
+
+
 @bp.get("/")
 def slash():
     return redirect("/admin")
@@ -75,7 +126,7 @@ def dashboard():
         by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
         providers=sorted(PROVIDERS), recent=list(st.recent_badges)[::-1],
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
-        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
+        updates=_updates(), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
 
 
 @bp.get("/review")

@@ -22,6 +22,7 @@ class Config:
     gemini_image_model: str = "gemini-3.1-flash-image"
     gemini_vision_model: str = "gemini-3.5-flash-lite"
     listen_port: int = 443  # TLS kiosk port (--dev uses --port instead)
+    local_http_port: int = 0  # extra plain-HTTP listener on 127.0.0.1 (git-deploy proxies to it); 0 = off
     tls_cert: Path = ROOT / "certs" / "babyburn.local.pem"
     tls_key: Path = ROOT / "certs" / "babyburn.local-key.pem"
     printer: str = "file"  # usb://0x04f9:0x209b | file
@@ -63,6 +64,9 @@ class Config:
                 if name.startswith("badge_offset_"):
                     if abs(value) > OFFSET_LIMIT:
                         raise ValueError(f"{var} must be between -{OFFSET_LIMIT} and {OFFSET_LIMIT}, got {raw!r}")
+                elif name == "local_http_port":
+                    if not 0 <= value <= 65535:
+                        raise ValueError(f"LOCAL_HTTP_PORT must be 0 (off) or 1-65535, got {raw!r}")
                 elif not (math.isfinite(value) and value > 0):
                     raise ValueError(f"{var} must be a finite number > 0, got {raw!r}")
             elif typ == (str | None):

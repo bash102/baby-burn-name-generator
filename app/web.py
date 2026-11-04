@@ -298,10 +298,12 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = create_app(Config.from_env())
     threading.Thread(target=_expire_loop, args=(app.extensions["babyburn"].sessions,), daemon=True).start()
+    cfg = app.extensions["babyburn"].cfg
+    if cfg.local_http_port and not args.dev:  # --dev already serves plain HTTP on loopback
+        threading.Thread(target=serve, args=(app, "127.0.0.1", cfg.local_http_port), daemon=True).start()
     if args.dev:
         serve(app, "127.0.0.1", args.port)
     else:
-        cfg = app.extensions["babyburn"].cfg
         for f in (cfg.tls_cert, cfg.tls_key):
             if not f.is_file():
                 raise SystemExit(f"TLS file not found: {f} (run deploy/setup-pi.sh or set TLS_CERT/TLS_KEY)")
