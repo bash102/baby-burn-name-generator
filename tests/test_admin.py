@@ -149,6 +149,36 @@ def test_reprint(k, tmp_path):
     assert post(k, "/admin/test-print").status_code == 200 and len(list(out.glob("*.png"))) == 2
 
 
+def test_test_coloring_page(k, tmp_path):
+    assert k.c.post("/admin/test-coloring", headers=AUTH).status_code == 403  # same CSRF guard
+    assert k.c.post("/admin/test-coloring", headers={"Origin": "http://localhost"}).status_code == 401
+    out = tmp_path / "coloring-prints"
+    k.state.printer = make_printer("file", out)
+    assert post(k, "/admin/test-coloring").status_code == 200
+    (png,) = out.glob("*.png")
+    assert Image.open(png).size == (954, 672)
+    def unplugged(img):
+        raise OSError("usb gone")
+
+    k.state.printer = unplugged
+    r = post(k, "/admin/test-coloring")
+    assert r.status_code == 502 and "usb gone" in r.get_json()["error"]
+
+
+def test_dashboard_shows_coloring_odds_and_pool(k, sample_content_dir):
+    def page():
+        return k.c.get("/admin", headers=AUTH).data.decode()
+
+    assert 'data-post="/admin/test-coloring"' in page()
+    assert "Coloring bonus: off" in page()  # the test kiosk turns it off
+    k.state.cfg = replace(k.state.cfg, coloring_odds=8)
+    assert "Coloring bonus: 1 in 8, 0 pages in pool (using the built-in drawings)" in page()
+    (sample_content_dir / "coloring").mkdir()
+    for n in ("a.png", "b.jpg", "readme.txt"):
+        (sample_content_dir / "coloring" / n).write_bytes(b"x")
+    assert "Coloring bonus: 1 in 8, 2 pages in pool" in page()
+
+
 def test_print_any_exception_is_json(k):
     def unplugged(img):
         raise OSError("usb gone")

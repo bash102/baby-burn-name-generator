@@ -5,6 +5,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -38,6 +39,7 @@ class Clock:
 
 class Kiosk:
     def __init__(self, tmp_path, content_dir, provider=None, printer=None, s3=None, **cfg):
+        cfg.setdefault("coloring_odds", 0)  # tests count prints; coloring tests opt in
         self.cfg = Config(content_dir=content_dir, data_dir=tmp_path / "data", printer="file",
                           photo_bucket="b", photo_base_url=BASE, album_secret=SECRET, **cfg)
         self.clock = Clock()
@@ -879,3 +881,75 @@ def test_js_countdown_floors_like_server():
 def test_finish_payload_has_retention_days(k):
     from app.photos import RETENTION_DAYS
     assert k.finish(k.session())["retention_days"] == RETENTION_DAYS
+
+
+class Recorder:
+    """Printer that keeps every label; call n (1-based) in fail_on raises like a jam."""
+    def __init__(self, fail_on=()):
+        self.calls, self.fail_on, self.labels = 0, set(fail_on), []
+
+    def __call__(self, img):
+        self.calls += 1
+        if self.calls in self.fail_on:
+            raise PrintError("jam")
+        self.labels.append(img)
+
+
+def test_coloring_odds_one_prints_badge_then_coloring_page(tmp_path, sample_content_dir):
+    (sample_content_dir / "coloring").mkdir()
+    Image.new("L", (40, 20), 0).save(sample_content_dir / "coloring" / "page.png")
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    for _ in range(3):
+        sid = k.session(photo=False)
+        r = k.finish(sid)
+        assert r["printed"] is True and r["coloring"] is True
+        assert k.finish(sid) == r  # the kiosk's retry is deduped: no second coloring page
+    assert len(p.labels) == 6
+    for page in p.labels[1::2]:  # the pool page, fitted onto the label
+        assert page.size == (954, 672) and page.mode == "1" and page.convert("L").getextrema() == (0, 255)
+
+
+def test_coloring_odds_zero_never_prints_one(tmp_path, sample_content_dir):
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=0)
+    assert all(k.finish(k.session(photo=False))["coloring"] is False for _ in range(20))
+    assert p.calls == 20
+
+
+def test_coloring_roughly_one_in_odds(tmp_path, sample_content_dir):
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=4)
+    k.state.rng = random.Random(1)
+    hits = sum(k.finish(k.session(photo=False))["coloring"] for _ in range(80))
+    assert 10 <= hits <= 30 and p.calls == 80 + hits
+
+
+def test_coloring_falls_back_to_drawn_page_without_pool(tmp_path, sample_content_dir):
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    assert k.finish(k.session(photo=False))["coloring"] is True
+    assert p.labels[1].size == (954, 672) and p.labels[1].mode == "1"
+
+
+def test_no_coloring_page_when_badge_did_not_print(tmp_path, sample_content_dir):
+    p = Recorder(fail_on={1})
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    r = k.finish(k.session(photo=False))
+    assert r["printed"] is False and r["coloring"] is False and p.calls == 1
+
+
+def test_coloring_print_failure_keeps_name(tmp_path, sample_content_dir):
+    p = Recorder(fail_on={2})
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    sid = k.session(photo=False)
+    r = k.finish(sid)
+    assert r["printed"] is True and r["coloring"] is False and r["name"]
+    assert k.state.recent_badges[-1][2] == r["name"]
+    assert k.finish(sid) == r and p.calls == 2
+
+
+def test_kiosk_shows_coloring_note():
+    js = (Path(web.__file__).parent / "static" / "kiosk.js").read_text()
+    assert 'coloring: "Bonus! A coloring page is printing too."' in js
+    assert "r.coloring ? " in js and 'location.search.includes("coloring")' in js

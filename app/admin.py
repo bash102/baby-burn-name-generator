@@ -14,6 +14,7 @@ from urllib.parse import quote, urlparse
 from flask import Blueprint, Response, abort, current_app, jsonify, make_response, redirect, render_template, request
 
 from app.badge import render_badge
+from app.coloring import coloring_page, page_files
 from app.config import PROVIDERS
 from app.content import KINDS, STATUSES, ContentError, append_entry, set_status
 from app.transform import get_provider
@@ -160,7 +161,7 @@ def dashboard():
         by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
         providers=sorted(PROVIDERS), recent=list(st.recent_badges)[::-1],
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
-        updates=_updates(), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
+        updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
 
 
 @bp.get("/review")
@@ -281,6 +282,12 @@ def reprint():
 @bp.post("/test-print")
 def test_print():
     return _print(render_badge("Test Print Baby", "Printer check", 3))
+
+
+@bp.post("/test-coloring")
+def test_coloring():
+    st = _st()
+    return _print(coloring_page(st.rng, st.cfg.coloring_path))
 
 
 @bp.post("/provider")

@@ -18,6 +18,7 @@ from werkzeug.serving import make_server
 
 from app.admin import bp as admin_bp
 from app.badge import render_badge
+from app.coloring import coloring_page
 from app.config import Config
 from app.content import Content, ContentError, load_content
 from app.names import NameStore
@@ -275,11 +276,24 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     except Exception:  # any printer fault (USB, OSError) must not lose the name
         log.exception("print failed for %s", display)
         printed = False
+    # Bonus label, only after a printed badge. /finish runs this once per session (the result is cached),
+    # so a kiosk retry never prints a second page.
+    odds = st.cfg.coloring_odds
+    coloring = printed and odds > 0 and st.rng.randrange(odds) == 0 and _print_coloring(st)
     st.recent_badges.append((uuid.uuid4().hex, name_id, display, tagline, first_burn, photo_url))
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,
-            "printed": printed, "photo_url": photo_url, "retention_days": RETENTION_DAYS}
+            "printed": printed, "coloring": coloring, "photo_url": photo_url, "retention_days": RETENTION_DAYS}
+
+
+def _print_coloring(st: AppState) -> bool:
+    try:
+        st.printer(coloring_page(st.rng, st.cfg.coloring_path))
+        return True
+    except Exception:  # the badge already printed; a bonus fault must not fail the guest
+        log.exception("coloring page print failed")
+        return False
 
 
 def _expire_loop(sessions: SessionStore) -> None:

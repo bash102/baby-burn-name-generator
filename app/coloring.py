@@ -1,14 +1,20 @@
-"""Random coloring-page labels: thick black outlines, white insides, Burning Man baby motifs."""
+"""Coloring-page bonus labels: a random page from the pool in COLORING_DIR (pre-generated images),
+or, when the pool is empty, a drawn page (thick black outlines, white insides, Burning Man baby motifs)."""
+import logging
 import math
 import random
+from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 from app.badge import H, SAFE_INSET_PX, TEXT_FONT, W, _font
 
 LINE = 6  # outline width in printer dots (~0.5 mm), thick enough to color inside
 MARGIN = SAFE_INSET_PX + 20
 CAPTION = "Baby Burn coloring bonus"
+PAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+THRESHOLD = [0] * 129 + [255] * 127  # L -> "1": ink at <= 128, no dither
+log = logging.getLogger(__name__)
 
 
 def _poly(d, pts, w=LINE):
@@ -118,15 +124,11 @@ def the_man(d, cx, cy, s, rng):
             flame(d, cx + dx * s, base + cy - s * 0.2, s * 0.36, rng)
 
 
-def _pacifier(d, cx, cy, s):
+def pacifier(d, cx, cy, s, rng):
     _oval(d, cx, cy - s * 0.35, s * 0.22, s * 0.3)  # nipple, behind the shield
     _oval(d, cx, cy, s * 0.62, s * 0.3)  # shield
     d.ellipse((cx - s * 0.28, cy - s * 0.05, cx + s * 0.28, cy + s * 0.55), outline="black", width=LINE + 2)
     _oval(d, cx, cy, s * 0.13, s * 0.1, w=4)  # button
-
-
-def pacifier(d, cx, cy, s, rng):
-    _pacifier(d, cx, cy, s)
 
 
 def baby(d, cx, cy, s, rng):
@@ -141,7 +143,7 @@ def baby(d, cx, cy, s, rng):
     d.line((cx - r * 0.08, cy - r * 0.2, cx + r * 0.08, cy - r * 0.2), fill="black", width=LINE)
     for side in (-1, 1):
         d.line((cx + side * r * 0.68, cy - r * 0.22, cx + side * r * 0.97, cy - r * 0.3), fill="black", width=LINE)
-    _pacifier(d, cx, cy + r * 0.45, r * 0.55)
+    pacifier(d, cx, cy + r * 0.45, r * 0.55, rng)
 
 
 def sun(d, cx, cy, s, rng):
@@ -194,6 +196,8 @@ def render_coloring(seed: int | None = None) -> Image.Image:
     rng.shuffle(slots)
     for f, (x, y) in zip(sidekicks, slots):
         x, y, s = x + rng.uniform(-20, 20), y + rng.uniform(-15, 15), rng.uniform(100, 125)
+        edge = SAFE_INSET_PX + s * 0.85  # widest motif (planet ring) reaches 0.8 s: keep it off the label edge
+        x = min(max(x, edge), W - edge)
         f(d, x, y, s, rng)
         taken.append((x - s * 0.85, y - s * 0.85, x + s * 0.85, y + s * 0.85))
     # Filler stars only in the gaps, so they never sit on top of a drawing.
@@ -208,4 +212,36 @@ def render_coloring(seed: int | None = None) -> Image.Image:
                 break
     tw = d.textlength(CAPTION, font=caption_font)
     d.text(((W - tw) / 2, H - MARGIN - cap_h + 6), CAPTION, font=caption_font, fill="black")
-    return img.point(lambda v: 255 if v > 128 else 0).convert("1")
+    return img.point(THRESHOLD, "1")
+
+
+def page_files(coloring_dir: Path) -> list[Path]:
+    """The pool: PNG/JPEG files in coloring_dir (none if it is missing), in a stable order."""
+    if not coloring_dir.is_dir():
+        return []
+    return sorted(p for p in coloring_dir.iterdir() if p.suffix.lower() in PAGE_SUFFIXES and p.is_file())
+
+
+def pick_page(rng: random.Random, coloring_dir: Path) -> Image.Image | None:
+    """A random pool page fitted (aspect kept, white letterbox) inside SAFE_INSET_PX, mode "1"; None if no pool."""
+    files = page_files(coloring_dir)
+    if not files:
+        return None
+    with Image.open(rng.choice(files)) as src:
+        rgba = src.convert("RGBA")
+    flat = Image.new("RGB", rgba.size, "white")
+    flat.paste(rgba, mask=rgba)  # transparent background prints as white
+    page = ImageOps.contain(flat.convert("L"), (W - 2 * SAFE_INSET_PX, H - 2 * SAFE_INSET_PX))
+    img = Image.new("L", (W, H), "white")
+    img.paste(page, ((W - page.width) // 2, (H - page.height) // 2))
+    return img.point(THRESHOLD, "1")
+
+
+def coloring_page(rng: random.Random, coloring_dir: Path) -> Image.Image:
+    """The bonus label: a pool page, or a drawn one when the pool is empty or the picked file is unreadable."""
+    try:
+        page = pick_page(rng, coloring_dir)
+    except Exception:  # a corrupt file in the pool must not cost the guest the bonus
+        log.exception("coloring page in %s unreadable, drawing one instead", coloring_dir)
+        page = None
+    return page or render_coloring(rng.getrandbits(32))
