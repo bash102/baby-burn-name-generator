@@ -1,5 +1,6 @@
 """Badge renderer for Brother DK-1234 (60x86 mm) labels, landscape at 300 dpi."""
 import random
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -63,19 +64,29 @@ def _chunks(word: str, font, width: int) -> list[str]:
     return out + [cur]
 
 
+def _parts(text: str) -> list[tuple[str, str]]:
+    """(piece, glue) pairs: words split after each hyphen, so "Glitter-Encrusted" can wrap as "Glitter-" / "Encrusted".
+    glue is the separator to put before the piece when it joins the current line."""
+    out = []
+    for word in text.split():
+        for i, piece in enumerate(re.split(r"(?<=-)(?=[^-])", word)):
+            out.append((piece, "" if i else " "))
+    return out
+
+
 def _wrap(text: str, font, width: int) -> list[str]:
     lines, cur = [], ""
-    for word in text.split():
-        if font.getlength(word) > width:  # unbreakable: split by characters
+    for piece, glue in _parts(text):
+        if font.getlength(piece) > width:  # unbreakable: split by characters
             if cur:
                 lines.append(cur)
-            *whole, cur = _chunks(word, font, width)
+            *whole, cur = _chunks(piece, font, width)
             lines += whole
             continue
-        trial = f"{cur} {word}".strip()
+        trial = cur + glue + piece if cur else piece
         if cur and font.getlength(trial) > width:
             lines.append(cur)
-            cur = word
+            cur = piece
         else:
             cur = trial
     return lines + [cur] if cur else lines
@@ -92,12 +103,13 @@ def _truncate(lines, font, width, max_lines):
 
 
 def _fit(text, path, lo, hi, box, max_lines):
-    """Largest pt in [lo, hi] whose wrapped text fits box (binary search). At lo it truncates with an ellipsis."""
+    """Largest pt in [lo, hi] that fits box keeping words whole (lines may break at spaces or after hyphens),
+    else the largest that fits by splitting words, else lo truncated with an ellipsis. Binary search."""
     bw, bh = box[2] - box[0], box[3] - box[1]
 
     def lines_if_fits(pt, whole_words):
         font = _font(path, pt)
-        if whole_words and any(font.getlength(w) > bw for w in text.split()):
+        if whole_words and any(font.getlength(p) > bw for p, _ in _parts(text)):
             return None  # would break a word mid-way; a smaller size may keep it whole
         lines = _wrap(text, font, bw)
         ok = len(lines) <= max_lines and len(lines) * line_height(font) <= bh
