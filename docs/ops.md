@@ -158,7 +158,13 @@ Always pass `--border ticket_notches` (the thickest border) so every try is comp
 ```
 (Full `uv` path because it may not be on PATH yet in a fresh SSH session.)
 
-**Coloring-page bonus.** About 1 in `COLORING_ODDS` guests (default 8; `0` turns it off) gets a second label right after their badge: a coloring page, picked at random from the pool: the owner-reviewed PNG/JPG files in `content/coloring/` of the private content repo (or `COLORING_DIR`). The bonus is inactive until that folder has pages, and an unreadable file just means no bonus that time (both are logged once). It prints only when the badge did; if it jams, the guest keeps their name. Admin > Printing shows the odds and the pool size, and **Test coloring page** prints one (`tools/test_print.py --coloring` does the same from SSH, with offsets). Budget about 1 extra label per 8 guests: bring spare DK-1234 rolls.
+**Coloring-page bonus.** About 1 in `COLORING_ODDS` guests (default 8; `0` turns it off) gets a second label right after their badge: a coloring page picked at random from a pool.
+- Where pages live: `coloring/` at the root of the private content repo, which is `content/coloring/` on the Pi. Set `COLORING_DIR` to use another folder.
+- How they get there: add them to the content repo, then re-run the content rsync from section 2. Merging code does not deliver pages.
+- A good page is black and white line art, landscape, made for a 60 × 86 mm label (954 × 672 dots). Gray darker than 50% prints black; lighter gray prints white. Phone photos are rotated upright automatically.
+- With no pages in the pool the bonus is inactive. It prints only after the badge printed, and a coloring-page problem never costs the guest their name.
+- To check it: Admin > Printing > **Test coloring page**, or `tools/test_print.py x --coloring` over SSH (uses the print offsets).
+- Labels: budget about 1 extra label per `COLORING_ODDS` guests, so bring spare DK-1234 rolls.
 
 ## 6. Go-live checklist
 

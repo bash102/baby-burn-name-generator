@@ -177,11 +177,27 @@ def test_dashboard_shows_coloring_odds_and_pool(k, sample_content_dir):
     assert 'data-post="/admin/test-coloring"' in page()
     assert "Coloring bonus: off" in page()  # the test kiosk turns it off
     k.state.cfg = replace(k.state.cfg, coloring_odds=8)
-    assert "Coloring bonus: 1 in 8, no pages in pool, bonus inactive" in page()
+    assert "Coloring bonus: 1 in 8 guests, pool empty (inactive)" in page()
     (sample_content_dir / "coloring").mkdir()
-    for n in ("a.png", "b.jpg", "readme.txt"):
+    for n in ("a.png", "readme.txt"):
         (sample_content_dir / "coloring" / n).write_bytes(b"x")
-    assert "Coloring bonus: 1 in 8, 2 pages in pool" in page()
+    assert "Coloring bonus: 1 in 8 guests, 1 page in pool" in page()
+    (sample_content_dir / "coloring" / "b.JPEG").write_bytes(b"x")
+    assert "Coloring bonus: 1 in 8 guests, 2 pages in pool" in page()
+
+
+def test_unlistable_pool_degrades(k, sample_content_dir, monkeypatch):
+    (sample_content_dir / "coloring").mkdir()
+    Image.new("L", (40, 20), 0).save(sample_content_dir / "coloring" / "page.png")
+
+    def denied(self):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(type(sample_content_dir), "iterdir", denied)
+    k.state.cfg = replace(k.state.cfg, coloring_odds=8)
+    assert "pool empty (inactive)" in k.c.get("/admin", headers=AUTH).data.decode()
+    r = post(k, "/admin/test-coloring")
+    assert r.status_code == 409 and r.get_json()["error"]
 
 
 def test_print_any_exception_is_json(k):

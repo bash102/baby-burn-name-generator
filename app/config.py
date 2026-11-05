@@ -7,6 +7,7 @@ from typing import Mapping, get_type_hints
 ROOT = Path(__file__).resolve().parent.parent
 OFFSET_LIMIT = 60  # max |BADGE_OFFSET_X/Y|, printer dots
 SAMPLE_DIR = ROOT / "content.sample"
+PATHS = (Path, Path | None)
 PROVIDERS = {"openai", "gemini", "fake"}
 
 
@@ -30,7 +31,7 @@ class Config:
     badge_offset_x: int = 0  # print calibration, printer dots (~12/mm): +right, -left
     badge_offset_y: int = 0  # +down, -up
     coloring_odds: int = 8  # bonus coloring page for 1 in N guests; 0 = off
-    coloring_dir: Path | None = None  # pre-generated pages; None = <content_dir>/coloring (see coloring_path)
+    coloring_dir: Path | None = None  # owner-reviewed pages; None = <content_dir>/coloring (see coloring_path)
     transform_timeout_s: float = 25  # kiosk display budget: /photo reports failed after this
     provider_timeout_s: float = 90  # AI HTTP timeout; a late dusty image still reaches the phone page
     quiz_random_count: int = 4
@@ -58,9 +59,9 @@ class Config:
         for name, typ in get_type_hints(cls).items():  # resolves postponed annotations
             var = name.upper()
             raw = env.get(var)
-            if raw is None or (raw == "" and typ in (Path, Path | None)):
+            if raw is None or (raw == "" and typ in PATHS):
                 continue
-            if typ in (Path, Path | None):
+            if typ in PATHS:
                 kw[name] = ROOT / raw  # absolute raw wins; relative anchors at the repo root
             elif typ in (int, float):
                 try:

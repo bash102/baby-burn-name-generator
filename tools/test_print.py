@@ -2,7 +2,8 @@
 
 Target defaults to $PRINTER, else usb://0x04f9:0x209b. Use "file" to write a PNG to out/.
 Offsets default to BADGE_OFFSET_X/Y from the environment (range -OFFSET_LIMIT..OFFSET_LIMIT).
---coloring prints a random bonus coloring page from COLORING_DIR instead of the badge.
+--coloring prints a random bonus coloring page from the pool (COLORING_DIR, default <CONTENT_DIR>/coloring)
+instead of the badge.
 """
 import argparse
 import os

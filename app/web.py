@@ -288,13 +288,14 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
 
 
 def _print_coloring(st: AppState) -> bool:
-    page = pick_page(st.rng, st.cfg.coloring_path)
-    if page is None:  # empty pool or unreadable file: no bonus (pick_page logs it)
-        return False
+    # ponytail: badge and page lock separately; an admin test print can land between them. One lock across both if a second kiosk is ever added.
     try:
+        page = pick_page(st.rng, st.cfg.coloring_path)
+        if page is None:  # empty pool or unusable file: no bonus (pick_page logs it)
+            return False
         st.printer(page)
         return True
-    except Exception:  # the badge already printed; a bonus fault must not fail the guest
+    except Exception:  # the badge already printed; a bonus fault must not fail the guest or reprint the badge
         log.exception("coloring page print failed")
         return False
 

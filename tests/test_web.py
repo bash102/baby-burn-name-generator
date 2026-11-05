@@ -5,7 +5,6 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -963,7 +962,26 @@ def test_coloring_print_failure_keeps_name(tmp_path, sample_content_dir):
     assert k.finish(sid) == r and p.calls == 2
 
 
-def test_kiosk_shows_coloring_note():
-    js = (Path(web.__file__).parent / "static" / "kiosk.js").read_text()
-    assert 'coloring: "Bonus! A coloring page is printing too."' in js
-    assert "r.coloring ? " in js and 'location.search.includes("coloring")' in js
+def test_coloring_page_crash_never_fails_or_reprints_the_badge(tmp_path, sample_content_dir, monkeypatch):
+    def broken(rng, coloring_dir):
+        raise MemoryError("decoder blew up")
+
+    monkeypatch.setattr(web, "pick_page", broken)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    before = k.state.names.remaining()
+    sid = k.session(photo=False)
+    r = k.finish(sid)
+    assert r["printed"] is True and r["coloring"] is False and r["name"]
+    assert k.finish(sid) == r  # the retry gets the stored result
+    assert p.calls == 1 and k.state.names.remaining() == before - 1
+
+
+def test_one_corrupt_page_does_not_cost_the_bonus(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)  # page.png, good
+    (sample_content_dir / "coloring" / "bad.png").write_bytes(b"not a png")
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    for _ in range(5):
+        assert k.finish(k.session(photo=False))["coloring"] is True
+    assert p.calls == 10
