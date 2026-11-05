@@ -114,3 +114,24 @@ def test_test_print_passes_chosen_border(monkeypatch, capsys):
     test_print.main(["x", "file", "--border", "ticket_notches"])
     assert seen["border"] == "ticket_notches"
     assert "border=ticket_notches" in capsys.readouterr().out
+
+
+def test_test_print_coloring_page_with_offsets(monkeypatch, capsys, tmp_path):
+    from tools import test_print
+    monkeypatch.setenv("COLORING_DIR", str(tmp_path))
+    Image.new("L", (40, 20), 0).save(tmp_path / "page.png")
+    printed = []
+    monkeypatch.setattr(test_print, "render_badge", lambda *a, **k: pytest.fail("badge rendered"))
+    monkeypatch.setattr(test_print, "make_printer", lambda t, d, off: lambda img: printed.append((off, img)))
+    test_print.main(["x", "file", "--coloring", "--offset-x", "4"])
+    ((off, img),) = printed
+    assert off[0] == 4 and img.size == (954, 672) and img.mode == "1"
+    assert "coloring page" in capsys.readouterr().out
+
+
+def test_test_print_coloring_empty_pool_errors(monkeypatch, tmp_path):
+    from tools import test_print
+    monkeypatch.setenv("COLORING_DIR", str(tmp_path))
+    monkeypatch.setattr(test_print, "make_printer", lambda t, d, off: lambda img: pytest.fail("printed"))
+    with pytest.raises(SystemExit, match="no readable coloring page"):
+        test_print.main(["x", "file", "--coloring"])

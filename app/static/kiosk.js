@@ -18,6 +18,7 @@ const COPY = {
   revealing: "Consulting the dust oracle...",
   revealIntro: "Your playa name is",
   jammed: "Badge jammed! Grab a volunteer.",
+  coloring: "Bonus! A coloring page is printing too.",
   developing: "Developing your dusty baby...",
   takeHome: "Take it home",
   skip: "Skip",
@@ -38,7 +39,7 @@ const COPY = {
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
 const IDLE_MS = 20000, IDLE_LONG_MS = 45000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
 const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
-const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam
+const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page
 const STUB_MODE = new URLSearchParams(location.search).get("stub");
 
 // ---- API ----
@@ -84,7 +85,7 @@ async function stubApi(path, opts) {
   const m = opts.method || "GET";
   if (path === "/api/session") return json({ session_id: "stub1", has_photo: !!(opts.body && opts.body.get("photo")) });
   if (path === "/api/quiz") return json(STUB_QUIZ);
-  if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), photo_url: "https://example.invalid/p/stub" });
+  if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), coloring: location.search.includes("coloring"), photo_url: "https://example.invalid/p/stub" });
   if (path.endsWith("/qr.svg")) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 5h2v1H6zM5 7h3v1H5z"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
   if (path.endsWith("/photo-choice")) window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice);   // every try
   if (path.endsWith("/photo-choice") && STUB_MODE === "faildelete" && JSON.parse(opts.body).choice === "delete") return json({ error: "boom" }, 500);
@@ -245,6 +246,7 @@ async function finish() {
     h("div", { class: "txt" },
       h("p", {}, COPY.revealIntro), h("div", { class: "name" }, r.name), h("div", { class: "tagline" }, r.tagline),
       r.first_burn_label ? h("p", {}, r.first_burn_label) : null,
+      r.coloring ? h("p", { class: "small" }, COPY.coloring) : null,
       r.printed ? null : h("div", { class: "warn" }, COPY.jammed)),
     S.hasPhoto ? photo : null),
     h("div", { class: "row" },

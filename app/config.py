@@ -7,6 +7,7 @@ from typing import Mapping, get_type_hints
 ROOT = Path(__file__).resolve().parent.parent
 OFFSET_LIMIT = 60  # max |BADGE_OFFSET_X/Y|, printer dots
 SAMPLE_DIR = ROOT / "content.sample"
+PATHS = (Path, Path | None)
 PROVIDERS = {"openai", "gemini", "fake"}
 
 
@@ -17,7 +18,7 @@ class Config:
     transform_provider: str = "fake"  # openai | gemini | fake
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    openai_image_model: str = "gpt-image-2.5-flare"
+    openai_image_model: str = "gpt-image-2"
     openai_vision_model: str = "gpt-5-mini"
     gemini_image_model: str = "gemini-3.1-flash-image"
     gemini_vision_model: str = "gemini-3.5-flash-lite"
@@ -29,6 +30,8 @@ class Config:
     admin_pin: str = ""
     badge_offset_x: int = 0  # print calibration, printer dots (~12/mm): +right, -left
     badge_offset_y: int = 0  # +down, -up
+    coloring_odds: int = 8  # bonus coloring page for 1 in N guests; 0 = off
+    coloring_dir: Path | None = None  # owner-reviewed pages; None = <content_dir>/coloring (see coloring_path)
     transform_timeout_s: float = 25  # kiosk display budget: /photo reports failed after this
     provider_timeout_s: float = 90  # AI HTTP timeout; a late dusty image still reaches the phone page
     quiz_random_count: int = 4
@@ -46,15 +49,19 @@ class Config:
     def content_is_sample(self) -> bool:
         return self.content_dir.resolve() == SAMPLE_DIR
 
+    @property
+    def coloring_path(self) -> Path:
+        return self.coloring_dir or self.content_dir / "coloring"
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
         kw = {}
         for name, typ in get_type_hints(cls).items():  # resolves postponed annotations
             var = name.upper()
             raw = env.get(var)
-            if raw is None or (raw == "" and typ is Path):
+            if raw is None or (raw == "" and typ in PATHS):
                 continue
-            if typ is Path:
+            if typ in PATHS:
                 kw[name] = ROOT / raw  # absolute raw wins; relative anchors at the repo root
             elif typ in (int, float):
                 try:
@@ -68,6 +75,9 @@ class Config:
                     off_ok = name == "local_http_port"
                     if not (0 if off_ok else 1) <= value <= 65535:
                         raise ValueError(f"{var} must be {'0 (off) or ' if off_ok else ''}1-65535, got {raw!r}")
+                elif name == "coloring_odds":
+                    if value < 0:
+                        raise ValueError(f"{var} must be 0 (off) or a whole number >= 1, got {raw!r}")
                 elif not (math.isfinite(value) and value > 0):
                     raise ValueError(f"{var} must be a finite number > 0, got {raw!r}")
             elif typ == (str | None):

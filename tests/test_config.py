@@ -161,3 +161,22 @@ def test_badge_offsets():
 def test_bad_badge_offset_raises(var, val):
     with pytest.raises(ValueError, match=var):
         Config.from_env({var: val})
+
+
+def test_coloring_odds():
+    assert Config().coloring_odds == 8
+    assert Config.from_env({"COLORING_ODDS": "0"}).coloring_odds == 0
+    assert Config.from_env({"COLORING_ODDS": "3"}).coloring_odds == 3
+
+
+@pytest.mark.parametrize("val", ["-1", "1.5", "abc", ""])
+def test_bad_coloring_odds_raises(val):
+    with pytest.raises(ValueError, match="COLORING_ODDS"):
+        Config.from_env({"COLORING_ODDS": val})
+
+
+def test_coloring_dir_defaults_under_content_dir(tmp_path):
+    assert Config(content_dir=tmp_path).coloring_path == tmp_path / "coloring"
+    assert Config.from_env({"CONTENT_DIR": str(tmp_path), "COLORING_DIR": ""}).coloring_path == tmp_path / "coloring"
+    assert Config.from_env({"COLORING_DIR": str(tmp_path / "pages")}).coloring_path == tmp_path / "pages"
+    assert Config.from_env({"COLORING_DIR": "pages"}).coloring_path == ROOT / "pages"

@@ -38,6 +38,7 @@ class Clock:
 
 class Kiosk:
     def __init__(self, tmp_path, content_dir, provider=None, printer=None, s3=None, **cfg):
+        cfg.setdefault("coloring_odds", 0)  # tests count prints; coloring tests opt in
         self.cfg = Config(content_dir=content_dir, data_dir=tmp_path / "data", printer="file",
                           photo_bucket="b", photo_base_url=BASE, album_secret=SECRET, **cfg)
         self.clock = Clock()
@@ -879,3 +880,108 @@ def test_js_countdown_floors_like_server():
 def test_finish_payload_has_retention_days(k):
     from app.photos import RETENTION_DAYS
     assert k.finish(k.session())["retention_days"] == RETENTION_DAYS
+
+
+class Recorder:
+    """Printer that keeps every label; call n (1-based) in fail_on raises like a jam."""
+    def __init__(self, fail_on=()):
+        self.calls, self.fail_on, self.labels = 0, set(fail_on), []
+
+    def __call__(self, img):
+        self.calls += 1
+        if self.calls in self.fail_on:
+            raise PrintError("jam")
+        self.labels.append(img)
+
+
+def coloring_pool(content_dir, data=None):
+    (content_dir / "coloring").mkdir()
+    if data is None:
+        Image.new("L", (40, 20), 0).save(content_dir / "coloring" / "page.png")
+    else:
+        (content_dir / "coloring" / "page.png").write_bytes(data)
+
+
+def test_coloring_odds_one_prints_badge_then_coloring_page(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    for _ in range(3):
+        sid = k.session(photo=False)
+        r = k.finish(sid)
+        assert r["printed"] is True and r["coloring"] is True
+        assert k.finish(sid) == r  # the kiosk's retry is deduped: no second coloring page
+    assert len(p.labels) == 6
+    for page in p.labels[1::2]:  # the pool page, fitted onto the label
+        assert page.size == (954, 672) and page.mode == "1" and page.convert("L").getextrema() == (0, 255)
+
+
+def test_coloring_odds_zero_never_prints_one(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=0)
+    assert all(k.finish(k.session(photo=False))["coloring"] is False for _ in range(20))
+    assert p.calls == 20
+
+
+def test_coloring_roughly_one_in_odds(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=4)
+    k.state.rng = random.Random(1)
+    hits = sum(k.finish(k.session(photo=False))["coloring"] for _ in range(80))
+    assert 10 <= hits <= 30 and p.calls == 80 + hits
+
+
+@pytest.mark.parametrize("pool", [None, b"not a png"])  # no pool dir; an unreadable file
+def test_no_bonus_without_a_readable_page(tmp_path, sample_content_dir, pool):
+    if pool:
+        coloring_pool(sample_content_dir, pool)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    r = k.finish(k.session(photo=False))
+    assert r["printed"] is True and r["coloring"] is False and r["name"] and p.calls == 1
+
+
+def test_no_coloring_page_when_badge_did_not_print(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
+    p = Recorder(fail_on={1})
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    r = k.finish(k.session(photo=False))
+    assert r["printed"] is False and r["coloring"] is False and p.calls == 1
+
+
+def test_coloring_print_failure_keeps_name(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
+    p = Recorder(fail_on={2})
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    sid = k.session(photo=False)
+    r = k.finish(sid)
+    assert r["printed"] is True and r["coloring"] is False and r["name"]
+    assert k.state.recent_badges[-1][2] == r["name"]
+    assert k.finish(sid) == r and p.calls == 2
+
+
+def test_coloring_page_crash_never_fails_or_reprints_the_badge(tmp_path, sample_content_dir, monkeypatch):
+    def broken(rng, coloring_dir):
+        raise MemoryError("decoder blew up")
+
+    monkeypatch.setattr(web, "pick_page", broken)
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    before = k.state.names.remaining()
+    sid = k.session(photo=False)
+    r = k.finish(sid)
+    assert r["printed"] is True and r["coloring"] is False and r["name"]
+    assert k.finish(sid) == r  # the retry gets the stored result
+    assert p.calls == 1 and k.state.names.remaining() == before - 1
+
+
+def test_one_corrupt_page_does_not_cost_the_bonus(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)  # page.png, good
+    (sample_content_dir / "coloring" / "bad.png").write_bytes(b"not a png")
+    p = Recorder()
+    k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
+    for _ in range(5):
+        assert k.finish(k.session(photo=False))["coloring"] is True
+    assert p.calls == 10
