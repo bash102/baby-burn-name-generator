@@ -91,6 +91,19 @@ def ink_bbox(a, b):
     return ImageChops.difference(a.convert("L"), b.convert("L")).getbbox()
 
 
+@pytest.mark.parametrize("name", ["Gnomeschooled", "Gnomeschooled Glitter Baby", "Bring Your Own Baby Bottle",
+                                  "Supercalifragilistic Dustbunny"])
+def test_words_are_never_split_when_a_smaller_size_fits(name):
+    pt, lines = fit_name(name)
+    assert " ".join(lines).split() == name.split()  # every word intact, none broken mid-word
+    font = badge.name_font(pt)
+    assert max(font.getlength(line) for line in lines) <= NAME_BOX[2] - NAME_BOX[0]
+
+
+def test_single_long_word_stays_on_one_line():
+    assert fit_name("Gnomeschooled")[1] == ["Gnomeschooled"]
+
+
 @pytest.mark.parametrize("n", [40, 45])
 def test_unbreakable_name_still_fits(n):
     name = "W" * n

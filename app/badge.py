@@ -95,23 +95,31 @@ def _fit(text, path, lo, hi, box, max_lines):
     """Largest pt in [lo, hi] whose wrapped text fits box (binary search). At lo it truncates with an ellipsis."""
     bw, bh = box[2] - box[0], box[3] - box[1]
 
-    def lines_if_fits(pt):
+    def lines_if_fits(pt, whole_words):
         font = _font(path, pt)
+        if whole_words and any(font.getlength(w) > bw for w in text.split()):
+            return None  # would break a word mid-way; a smaller size may keep it whole
         lines = _wrap(text, font, bw)
         ok = len(lines) <= max_lines and len(lines) * line_height(font) <= bh
         return lines if ok else None
 
+    def search(whole_words):
+        found, a, b = None, lo, hi
+        while a <= b:
+            mid = (a + b) // 2
+            lines = lines_if_fits(mid, whole_words)
+            if lines:
+                found, a = (mid, lines), mid + 1
+            else:
+                b = mid - 1
+        return found
+
+    # Prefer the largest size that keeps every word whole; split words only if no size can.
+    if found := search(True) or search(False):
+        return found
     floor_font = _font(path, lo)
     rows = min(max_lines, max(1, bh // line_height(floor_font)))
-    best = (lo, _truncate(_wrap(text, floor_font, bw), floor_font, bw, rows))
-    while lo <= hi:
-        mid = (lo + hi) // 2
-        lines = lines_if_fits(mid)
-        if lines:
-            best, lo = (mid, lines), mid + 1
-        else:
-            hi = mid - 1
-    return best
+    return lo, _truncate(_wrap(text, floor_font, bw), floor_font, bw, rows)
 
 
 def first_burn_text(first_burn: int) -> str:
