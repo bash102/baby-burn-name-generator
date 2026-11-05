@@ -91,6 +91,28 @@ def ink_bbox(a, b):
     return ImageChops.difference(a.convert("L"), b.convert("L")).getbbox()
 
 
+@pytest.mark.parametrize("name", ["Gnomeschooled", "Gnomeschooled Glitter Baby", "Bring Your Own Baby Bottle",
+                                  "Supercalifragilistic Dustbunny"])
+def test_words_are_never_split_when_a_smaller_size_fits(name):
+    pt, lines = fit_name(name)
+    assert " ".join(lines).split() == name.split()  # every word intact, none broken mid-word
+    font = badge.name_font(pt)
+    assert max(font.getlength(line) for line in lines) <= NAME_BOX[2] - NAME_BOX[0]
+
+
+def test_hyphenated_name_breaks_after_a_hyphen_instead_of_shrinking():
+    name = "Glitter-Encrusted-Supernova"
+    pt, lines = fit_name(name)
+    assert "".join(lines) == name and len(lines) == 2 and lines[0].endswith("-")
+    assert pt >= 14  # treating the compound as one unbreakable word would force it down to ~10 pt
+
+
+def test_tagline_keeps_words_whole():
+    box = (0, 0, 500, 200)
+    pt, lines = badge._fit("Certified dust goblin, Gnomeschooled", badge.TEXT_FONT, 8, 20, box, 2)
+    assert " ".join(lines).split() == "Certified dust goblin, Gnomeschooled".split()
+
+
 @pytest.mark.parametrize("n", [40, 45])
 def test_unbreakable_name_still_fits(n):
     name = "W" * n
