@@ -18,7 +18,7 @@ class Config:
     transform_provider: str = "fake"  # openai | gemini | fake
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    openai_image_model: str = "gpt-image-2.5-flare"
+    openai_image_model: str = "gpt-image-2"
     openai_vision_model: str = "gpt-5-mini"
     gemini_image_model: str = "gemini-3.1-flash-image"
     gemini_vision_model: str = "gemini-3.5-flash-lite"
