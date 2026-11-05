@@ -163,7 +163,7 @@ Always pass `--border ticket_notches` (the thickest border) so every try is comp
 - How they get there: add them to the content repo, then re-run the content rsync from section 2. Merging code does not deliver pages.
 - A good page is black and white line art, landscape, made for a 60 × 86 mm label (954 × 672 dots). Gray darker than 50% prints black; lighter gray prints white. Phone photos are rotated upright automatically.
 - With no pages in the pool the bonus is inactive. It prints only after the badge printed, and a coloring-page problem never costs the guest their name.
-- To check it: Admin > Printing > **Test coloring page**, or `tools/test_print.py x --coloring` over SSH (uses the print offsets).
+- To check it: Admin > Printing > **Test coloring page**, or over SSH from the clone: `~/.local/bin/uv run --env-file "$ENVF" python tools/test_print.py --coloring` (uses the pool and print offsets from the settings file).
 - Labels: budget about 1 extra label per `COLORING_ODDS` guests, so bring spare DK-1234 rolls.
 
 ## 6. Go-live checklist
