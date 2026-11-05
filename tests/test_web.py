@@ -895,9 +895,16 @@ class Recorder:
         self.labels.append(img)
 
 
+def coloring_pool(content_dir, data=None):
+    (content_dir / "coloring").mkdir()
+    if data is None:
+        Image.new("L", (40, 20), 0).save(content_dir / "coloring" / "page.png")
+    else:
+        (content_dir / "coloring" / "page.png").write_bytes(data)
+
+
 def test_coloring_odds_one_prints_badge_then_coloring_page(tmp_path, sample_content_dir):
-    (sample_content_dir / "coloring").mkdir()
-    Image.new("L", (40, 20), 0).save(sample_content_dir / "coloring" / "page.png")
+    coloring_pool(sample_content_dir)
     p = Recorder()
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
     for _ in range(3):
@@ -911,6 +918,7 @@ def test_coloring_odds_one_prints_badge_then_coloring_page(tmp_path, sample_cont
 
 
 def test_coloring_odds_zero_never_prints_one(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
     p = Recorder()
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=0)
     assert all(k.finish(k.session(photo=False))["coloring"] is False for _ in range(20))
@@ -918,6 +926,7 @@ def test_coloring_odds_zero_never_prints_one(tmp_path, sample_content_dir):
 
 
 def test_coloring_roughly_one_in_odds(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
     p = Recorder()
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=4)
     k.state.rng = random.Random(1)
@@ -925,14 +934,18 @@ def test_coloring_roughly_one_in_odds(tmp_path, sample_content_dir):
     assert 10 <= hits <= 30 and p.calls == 80 + hits
 
 
-def test_coloring_falls_back_to_drawn_page_without_pool(tmp_path, sample_content_dir):
+@pytest.mark.parametrize("pool", [None, b"not a png"])  # no pool dir; an unreadable file
+def test_no_bonus_without_a_readable_page(tmp_path, sample_content_dir, pool):
+    if pool:
+        coloring_pool(sample_content_dir, pool)
     p = Recorder()
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
-    assert k.finish(k.session(photo=False))["coloring"] is True
-    assert p.labels[1].size == (954, 672) and p.labels[1].mode == "1"
+    r = k.finish(k.session(photo=False))
+    assert r["printed"] is True and r["coloring"] is False and r["name"] and p.calls == 1
 
 
 def test_no_coloring_page_when_badge_did_not_print(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
     p = Recorder(fail_on={1})
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
     r = k.finish(k.session(photo=False))
@@ -940,6 +953,7 @@ def test_no_coloring_page_when_badge_did_not_print(tmp_path, sample_content_dir)
 
 
 def test_coloring_print_failure_keeps_name(tmp_path, sample_content_dir):
+    coloring_pool(sample_content_dir)
     p = Recorder(fail_on={2})
     k = Kiosk(tmp_path, sample_content_dir, printer=p, coloring_odds=1)
     sid = k.session(photo=False)

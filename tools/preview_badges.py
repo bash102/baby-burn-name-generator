@@ -1,4 +1,4 @@
-"""Write one preview PNG per sample name, plus a few drawn coloring pages: python tools/preview_badges.py out/"""
+"""Write one preview PNG per sample name: python tools/preview_badges.py out/"""
 import random
 import sys
 from pathlib import Path
@@ -9,9 +9,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.badge import render_badge  # noqa: E402
-from app.coloring import render_coloring  # noqa: E402
-
-COLORING_PREVIEWS = 4
 
 
 def main(out: Path) -> None:
@@ -24,9 +21,7 @@ def main(out: Path) -> None:
         img = render_badge(n["name"], rng.choice(taglines)["text"], rng.choice([None, 1, 2, 3]),
                            qr_url=qr, rng=rng)
         img.save(out / f"{n['id']}.png")
-    for seed in range(COLORING_PREVIEWS):
-        render_coloring(seed).save(out / f"coloring-{seed}.png")
-    print(f"wrote {len(names)} badges and {COLORING_PREVIEWS} coloring pages to {out}")
+    print(f"wrote {len(names)} badges to {out}")
 
 
 if __name__ == "__main__":

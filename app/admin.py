@@ -14,7 +14,7 @@ from urllib.parse import quote, urlparse
 from flask import Blueprint, Response, abort, current_app, jsonify, make_response, redirect, render_template, request
 
 from app.badge import render_badge
-from app.coloring import coloring_page, page_files
+from app.coloring import page_files, pick_page
 from app.config import PROVIDERS
 from app.content import KINDS, STATUSES, ContentError, append_entry, set_status
 from app.transform import get_provider
@@ -287,7 +287,10 @@ def test_print():
 @bp.post("/test-coloring")
 def test_coloring():
     st = _st()
-    return _print(coloring_page(st.rng, st.cfg.coloring_path))
+    page = pick_page(st.rng, st.cfg.coloring_path)
+    if page is None:
+        return jsonify(error=f"no readable coloring page in {st.cfg.coloring_path}: add PNG/JPG files"), 409
+    return _print(page)
 
 
 @bp.post("/provider")

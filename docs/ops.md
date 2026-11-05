@@ -158,7 +158,7 @@ Always pass `--border ticket_notches` (the thickest border) so every try is comp
 ```
 (Full `uv` path because it may not be on PATH yet in a fresh SSH session.)
 
-**Coloring-page bonus.** About 1 in `COLORING_ODDS` guests (default 8; `0` turns it off) gets a second label right after their badge: a coloring page, picked at random from the PNG/JPEG files in `COLORING_DIR` (default `<CONTENT_DIR>/coloring`, so real pages stay in the private content repo), or drawn by the kiosk when that folder is empty. It prints only when the badge did; if it jams, the guest keeps their name. Admin > Printing shows the odds and the pool size, and **Test coloring page** prints one (`tools/test_print.py --coloring` does the same from SSH, with offsets). Budget about 1 extra label per 8 guests: bring spare DK-1234 rolls.
+**Coloring-page bonus.** About 1 in `COLORING_ODDS` guests (default 8; `0` turns it off) gets a second label right after their badge: a coloring page, picked at random from the pool: the owner-reviewed PNG/JPG files in `content/coloring/` of the private content repo (or `COLORING_DIR`). The bonus is inactive until that folder has pages, and an unreadable file just means no bonus that time (both are logged once). It prints only when the badge did; if it jams, the guest keeps their name. Admin > Printing shows the odds and the pool size, and **Test coloring page** prints one (`tools/test_print.py --coloring` does the same from SSH, with offsets). Budget about 1 extra label per 8 guests: bring spare DK-1234 rolls.
 
 ## 6. Go-live checklist
 

@@ -18,7 +18,7 @@ from werkzeug.serving import make_server
 
 from app.admin import bp as admin_bp
 from app.badge import render_badge
-from app.coloring import coloring_page
+from app.coloring import pick_page
 from app.config import Config
 from app.content import Content, ContentError, load_content
 from app.names import NameStore
@@ -288,8 +288,11 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
 
 
 def _print_coloring(st: AppState) -> bool:
+    page = pick_page(st.rng, st.cfg.coloring_path)
+    if page is None:  # empty pool or unreadable file: no bonus (pick_page logs it)
+        return False
     try:
-        st.printer(coloring_page(st.rng, st.cfg.coloring_path))
+        st.printer(page)
         return True
     except Exception:  # the badge already printed; a bonus fault must not fail the guest
         log.exception("coloring page print failed")

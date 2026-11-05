@@ -149,11 +149,16 @@ def test_reprint(k, tmp_path):
     assert post(k, "/admin/test-print").status_code == 200 and len(list(out.glob("*.png"))) == 2
 
 
-def test_test_coloring_page(k, tmp_path):
+def test_test_coloring_page(k, tmp_path, sample_content_dir):
     assert k.c.post("/admin/test-coloring", headers=AUTH).status_code == 403  # same CSRF guard
     assert k.c.post("/admin/test-coloring", headers={"Origin": "http://localhost"}).status_code == 401
     out = tmp_path / "coloring-prints"
     k.state.printer = make_printer("file", out)
+    r = post(k, "/admin/test-coloring")
+    assert r.status_code == 409 and "no readable coloring page" in r.get_json()["error"]
+    assert not out.exists()
+    (sample_content_dir / "coloring").mkdir()
+    Image.new("L", (40, 20), 0).save(sample_content_dir / "coloring" / "page.png")
     assert post(k, "/admin/test-coloring").status_code == 200
     (png,) = out.glob("*.png")
     assert Image.open(png).size == (954, 672)
@@ -172,7 +177,7 @@ def test_dashboard_shows_coloring_odds_and_pool(k, sample_content_dir):
     assert 'data-post="/admin/test-coloring"' in page()
     assert "Coloring bonus: off" in page()  # the test kiosk turns it off
     k.state.cfg = replace(k.state.cfg, coloring_odds=8)
-    assert "Coloring bonus: 1 in 8, 0 pages in pool (using the built-in drawings)" in page()
+    assert "Coloring bonus: 1 in 8, no pages in pool, bonus inactive" in page()
     (sample_content_dir / "coloring").mkdir()
     for n in ("a.png", "b.jpg", "readme.txt"):
         (sample_content_dir / "coloring" / n).write_bytes(b"x")

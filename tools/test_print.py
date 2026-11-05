@@ -2,7 +2,7 @@
 
 Target defaults to $PRINTER, else usb://0x04f9:0x209b. Use "file" to write a PNG to out/.
 Offsets default to BADGE_OFFSET_X/Y from the environment (range -OFFSET_LIMIT..OFFSET_LIMIT).
---coloring prints a bonus coloring page (from COLORING_DIR, else a drawn one) instead of the badge.
+--coloring prints a random bonus coloring page from COLORING_DIR instead of the badge.
 """
 import argparse
 import os
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.badge import BORDERS, render_badge  # noqa: E402
-from app.coloring import coloring_page  # noqa: E402
+from app.coloring import pick_page  # noqa: E402
 from app.config import OFFSET_LIMIT, Config  # noqa: E402
 from app.printer import make_printer  # noqa: E402
 
@@ -41,7 +41,10 @@ def main(argv=None) -> None:
     a = ap.parse_args(argv)
     printer = make_printer(a.target, ROOT / "out", (a.offset_x, a.offset_y))
     if a.coloring:
-        printer(coloring_page(random.Random(), cfg.coloring_path))
+        page = pick_page(random.Random(), cfg.coloring_path)
+        if page is None:
+            raise SystemExit(f"no readable coloring page in {cfg.coloring_path}: add PNG/JPG files (or set COLORING_DIR)")
+        printer(page)
         print(f"sent a coloring page to {a.target} with offset x={a.offset_x} y={a.offset_y}")
         return
     border = a.border or random.choice(BORDERS)

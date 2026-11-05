@@ -56,7 +56,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% else %}<p>git-deploy is not installed on this machine, so auto-updates are not managed here.</p>{% endif %}
 <h2>Printing</h2>
 <p><button data-post="/admin/test-print">Test print</button> <button data-post="/admin/test-coloring">Test coloring page</button>
-Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }}, {{ coloring_pool }} pages in pool{% if not coloring_pool %} (using the built-in drawings){% endif %}{% else %}off{% endif %}</p>
+Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }}, {% if coloring_pool %}{{ coloring_pool }} pages in pool{% else %}no pages in pool, bonus inactive{% endif %}{% else %}off{% endif %}</p>
 <table>{% for bid, nid, display, tagline, fb, photo in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
 <td><button data-post="/admin/reprint" data-body='{{ {"id": bid}|tojson|forceescape }}'>Reprint</button></td></tr>
 {% else %}<tr><td>No badges printed yet.</td></tr>{% endfor %}</table>
