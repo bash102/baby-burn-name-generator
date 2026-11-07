@@ -29,6 +29,10 @@ BANNED_WORDS: frozenset[str] = frozenset({
 })
 
 _LOCK = threading.Lock()  # serializes read-modify-write in set_status/append_entry (web threads)
+# libyaml's C loader/dumper when PyYAML was built with it: ~6x faster on the Pi 3, where the pure-Python
+# parser made each admin Approve/Reject take ~5 s. Same safe subset of YAML either way.
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 RESERVED_NAME_PREFIX = "stranger-"  # fallback ids minted by app.names
 _ALLOWED_EXTRA = "’“”–—"
 _WORD = re.compile(r"[a-z0-9]+")
@@ -237,7 +241,7 @@ def _read_raw(dir: Path) -> dict[str, Any]:
     for kind in KINDS:
         path = Path(dir) / f"{kind}.yaml"
         try:
-            raw[kind] = yaml.safe_load(path.read_text(encoding="utf-8"))
+            raw[kind] = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)
         except (OSError, yaml.YAMLError) as e:
             raise ContentError(f"{path.name}: cannot read/parse: {e}") from e
         if raw[kind] is None:
@@ -256,7 +260,7 @@ def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{kind}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml.safe_dump(raw[kind], f, sort_keys=False, allow_unicode=True)
+            yaml.dump(raw[kind], f, Dumper=_Dumper, sort_keys=False, allow_unicode=True)
             f.flush()
             os.fsync(f.fileno())
         os.chmod(tmp, mode)  # mkstemp makes 0600
