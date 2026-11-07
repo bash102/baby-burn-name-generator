@@ -29,7 +29,7 @@ BANNED_WORDS: frozenset[str] = frozenset({
 })
 
 _LOCK = threading.Lock()  # serializes read-modify-write in set_status/append_entry (web threads)
-# libyaml's C loader/dumper when PyYAML was built with it: ~6x faster on the Pi 3, where the pure-Python
+# libyaml's C loader/dumper when PyYAML was built with it: ~5x faster on the Pi 3, where the pure-Python
 # parser made each admin Approve/Reject take ~5 s. Same safe subset of YAML either way.
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 _Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
