@@ -253,8 +253,9 @@ def load_content(dir: Path) -> Content:
     return _build(_read_raw(dir))
 
 
-def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> None:
-    _build(raw)  # validate the would-be result before touching disk
+def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> Content:
+    """Validate, write raw[kind] atomically, and return the Content now on disk (raw holds all three kinds)."""
+    content = _build(raw)  # validate the would-be result before touching disk
     path = Path(dir) / f"{kind}.yaml"
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{kind}.", suffix=".tmp")
@@ -269,6 +270,7 @@ def _commit(dir: Path, kind: str, raw: dict[str, Any]) -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+    return content
 
 
 def _check_kind(kind: str) -> None:
@@ -276,8 +278,9 @@ def _check_kind(kind: str) -> None:
         raise ContentError(f"unknown kind {kind!r}; expected one of {KINDS}")
 
 
-def set_status(dir: Path, kind: Kind, ids: str | list[str], status: str) -> None:
-    """Set the status of one id, or of every listed id in one write; any unknown id writes nothing."""
+def set_status(dir: Path, kind: Kind, ids: str | list[str], status: str) -> Content:
+    """Set the status of one id, or of every listed id in one write; any unknown id writes nothing.
+    Returns the content as written, same as a fresh load_content(dir)."""
     _check_kind(kind)
     with _LOCK:
         raw = _read_raw(dir)
@@ -286,15 +289,15 @@ def set_status(dir: Path, kind: Kind, ids: str | list[str], status: str) -> None
             if not isinstance(id, str) or id not in by_id:
                 raise ContentError(f"{kind}[{id}]: no such entry")
             by_id[id]["status"] = status  # _commit rejects an invalid status
-        _commit(dir, kind, raw)
+        return _commit(dir, kind, raw)
 
 
-def append_entry(dir: Path, kind: Kind, entry: dict) -> None:
+def append_entry(dir: Path, kind: Kind, entry: dict) -> Content:
     _check_kind(kind)
     with _LOCK:
         raw = _read_raw(dir)
         raw[kind].append(dict(entry))
-        _commit(dir, kind, raw)
+        return _commit(dir, kind, raw)
 
 
 def _summary(c: Content) -> str:

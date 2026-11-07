@@ -73,7 +73,7 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 
 {% for r in rows %}
 <div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}">
-{% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png">{% endif %}
+{% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}">{% endif %}
 <div class="body">
 {% if kind == "names" %}<b>{{ r.name }}</b> {% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}
 {% elif kind == "taglines" %}<b>{{ r.text }}</b>

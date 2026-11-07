@@ -1,11 +1,15 @@
 import base64
+import threading
+import time
 from dataclasses import replace
 
 import pytest
 from PIL import Image
 
 from app.config import SAMPLE_DIR
-from app.content import append_entry
+from app import admin
+from app.admin import preview_key
+from app.content import append_entry, load_content
 from app.printer import PrintError, make_printer
 from test_web import Kiosk
 
@@ -79,10 +83,13 @@ def test_add_name_and_tagline(k):
     assert any(t.text == "Fresh dust" for t in k.state.content.approved_taglines)
 
 
-def test_reload_failure_keeps_old_content(k):
+def test_reload_failure_keeps_old_content(k, monkeypatch):
+    reloads = []
+    real = k.state.reload_content
+    monkeypatch.setattr(k.state, "reload_content", lambda: reloads.append(1) or real())
     (k.cfg.content_dir / "names.yaml").write_text("- {id: broken")
     r = post(k, "/admin/status", json={"kind": "names", "id": "d1", "status": "approved"})
-    assert r.status_code == 400 and r.get_json()["error"]
+    assert r.status_code == 400 and r.get_json()["error"] and reloads  # the error path still reloads
     assert k.c.get("/api/quiz").status_code == 200
     assert b"Content error" in k.c.get("/admin", headers=AUTH).data
 
@@ -100,7 +107,7 @@ def test_sample_content_is_read_only(k):
 def test_review_page(k):
     html = k.c.get("/admin/review?kind=names&status=draft", headers=AUTH).data.decode()
     assert "Draft &lt;b&gt;Baby&lt;/b&gt;" in html and "<b>Baby</b>" not in html  # escaped
-    assert 'loading="lazy" alt="badge preview" src="/admin/preview/d1.png"' in html
+    assert f'loading="lazy" alt="badge preview" src="/admin/preview/d1.png?v={preview_key("Draft <b>Baby</b>")}"' in html
     assert "check &lt;i&gt;this&lt;/i&gt;" in html and "row needs" in html
     assert html.index("Fave Tot") < html.index("Needy Tot") < html.index("Draft &lt;b&gt;")  # favorite, then needs_owner
     only = k.c.get("/admin/review?kind=names&status=draft&needs_owner=1", headers=AUTH).data.decode()
@@ -114,6 +121,84 @@ def test_preview_png(k):
     assert r.mimetype == "image/png" and r.data.startswith(b"\x89PNG")
     assert k.c.get("/admin/preview/nope.png", headers=AUTH).status_code == 404
 
+
+def _spy_render(monkeypatch):
+    calls = []
+    real = admin.render_badge
+    monkeypatch.setattr(admin, "render_badge", lambda *a, **kw: calls.append(a) or real(*a, **kw))
+    return calls
+
+def test_preview_cache_hit_skips_render(k, monkeypatch):
+    calls = _spy_render(monkeypatch)
+    v = preview_key("Draft <b>Baby</b>")
+    first = k.c.get(f"/admin/preview/d1.png?v={v}", headers=AUTH)
+    second = k.c.get(f"/admin/preview/d1.png?v={v}", headers=AUTH)
+    assert len(calls) == 1 and first.data == second.data and first.data.startswith(b"\x89PNG")
+    assert second.headers["Cache-Control"] == "private, max-age=2592000, immutable"
+    assert (k.cfg.data_dir / "previews" / admin.LAYOUT / f"{v}.png").read_bytes() == first.data
+    stale = k.c.get("/admin/preview/d1.png?v=old", headers=AUTH)
+    assert stale.data == first.data and "immutable" not in stale.headers["Cache-Control"]
+    assert len(calls) == 1
+
+def test_preview_served_when_cache_dir_unwritable(k, monkeypatch):
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(admin.Path, "write_bytes", boom)
+    r = k.c.get("/admin/preview/d1.png", headers=AUTH)
+    assert r.status_code == 200 and r.data.startswith(b"\x89PNG")
+    assert not list((k.cfg.data_dir / "previews").rglob("*.tmp"))
+
+
+def test_preview_render_is_deterministic(k, monkeypatch):
+    a = k.c.get("/admin/preview/d1.png", headers=AUTH).data
+    for f in (k.cfg.data_dir / "previews").rglob("*.png"):
+        f.unlink()
+    assert k.c.get("/admin/preview/d1.png", headers=AUTH).data == a
+
+def test_preview_key_tracks_name_text():
+    assert preview_key("Dusty Tot") == preview_key("Dusty Tot") != preview_key("Dusty Tots")
+
+def test_preview_old_layouts_removed(k):
+    old = k.cfg.data_dir / "previews" / "oldlayout"
+    old.mkdir(parents=True)
+    (old / "x.png").write_bytes(b"stale")
+    assert k.c.get("/admin/preview/d1.png", headers=AUTH).status_code == 200
+    assert not old.exists() and [p.name for p in (k.cfg.data_dir / "previews").iterdir()] == [admin.LAYOUT]
+
+def test_status_click_installs_content_without_reload(k, monkeypatch):
+    monkeypatch.setattr(k.state, "reload_content", lambda: pytest.fail("reload_content called"))
+    assert post(k, "/admin/status", json={"kind": "names", "id": "d1", "status": "approved"}).status_code == 200
+    assert k.state.content == load_content(k.cfg.content_dir) and k.state.content_error is None
+    assert "d1" in {n.id for n in k.state.names._pool}
+    assert "Draft &lt;b&gt;Baby&lt;/b&gt;" in k.c.get("/admin/review?kind=names&status=approved", headers=AUTH).data.decode()
+    k.state.names.set_pool([n for n in k.state.names._pool if n.id == "d1"])  # only d1 left to draw
+    assert k.state.names.pick(set(), k.state.rng) == ("d1", "Draft <b>Baby</b>")
+    r = post(k, "/admin/add", data={"kind": "names", "name": "Fresh Tot", "tags": "dust"})
+    assert r.status_code == 302 and any(n.name == "Fresh Tot" for n in k.state.content.approved_names)
+
+def test_concurrent_writes_install_in_write_order(k, monkeypatch):
+    first_wrote, real = threading.Event(), admin.set_status
+
+    def slow_first(*a):  # the first click writes, then stalls before it can install
+        c = real(*a)
+        if not first_wrote.is_set():
+            first_wrote.set()
+            time.sleep(0.3)  # without the lock, the second click writes and installs in here
+        return c
+
+    monkeypatch.setattr(admin, "set_status", slow_first)
+    click = lambda s: k.app.test_client().post(
+        "/admin/status", headers=POST, json={"kind": "names", "id": "d1", "status": s})
+    a = threading.Thread(target=click, args=("approved",))
+    a.start()
+    assert first_wrote.wait(5)
+    b = threading.Thread(target=click, args=("rejected",))
+    b.start()
+    a.join(), b.join()
+    on_disk = next(n for n in load_content(k.cfg.content_dir).names if n.id == "d1")
+    served = next(n for n in k.state.content.names if n.id == "d1")
+    assert on_disk.status == served.status == "rejected"  # the second write wins in both
+    assert "d1" not in {n.id for n in k.state.names._pool}
 
 def test_dashboard(k):
     k.state.content = replace(k.state.content, warnings=["watch <this>"])
@@ -215,7 +300,7 @@ def test_status_bulk(k, monkeypatch):
     monkeypatch.setattr(k.state, "reload_content", lambda: reloads.append(1) or real())
     r = post(k, "/admin/status-bulk", json={"kind": "names", "ids": ["d1", "d2"], "status": "approved",
                                             "include_needs_owner": True})
-    assert r.status_code == 200 and r.get_json() == {"ok": True} and len(reloads) == 1
+    assert r.status_code == 200 and r.get_json() == {"ok": True} and not reloads
     assert {"d1", "d2"} <= {n.id for n in k.state.names._pool}
 
 

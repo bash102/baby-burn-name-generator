@@ -175,8 +175,9 @@ def test_invalid_yaml_raises_contenterror(sample_content_dir):
 
 
 def test_set_status_and_append_roundtrip(sample_content_dir):
-    append_entry(sample_content_dir, "names", _name("d1", "Draft Dude", status="draft"))
-    set_status(sample_content_dir, "names", "d1", "approved")
+    c = append_entry(sample_content_dir, "names", _name("d1", "Draft Dude", status="draft"))
+    assert c == load_content(sample_content_dir)  # the written content, already validated
+    assert set_status(sample_content_dir, "names", "d1", "approved") == load_content(sample_content_dir)
     append_entry(sample_content_dir, "names", _name("n2", "Brand New"))
     c = load_content(sample_content_dir)
     assert {"d1", "n2"} <= {n.id for n in c.approved_names}

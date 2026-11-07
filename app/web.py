@@ -56,6 +56,10 @@ class AppState:
             self.content_error = str(e)
             log.error("content reload failed, keeping the old content:\n%s", e)
             return
+        self.install_content(content)
+
+    def install_content(self, content: Content) -> None:
+        """Serve validated content: the name pool, quiz and admin pages all read from here."""
         self.names.set_pool(content.approved_names)
         self.content, self.content_error = content, None
 
