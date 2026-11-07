@@ -1,18 +1,22 @@
 """PIN-protected owner pages: dashboard, content review/add, reprint. HTTP Basic, password = ADMIN_PIN."""
+import hashlib
 import hmac
 import logging
 import os
 import pwd
+import random
 import re
 import shutil
 import subprocess
 import threading
 import time
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from flask import Blueprint, Response, abort, current_app, jsonify, make_response, redirect, render_template, request
 
+from app import badge
 from app.badge import render_badge
 from app.coloring import page_files, pick_page
 from app.config import PROVIDERS
@@ -24,6 +28,11 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 SAMPLE_TAGLINE = "Dusty since the womb"
 SAMPLE_BANNER = "Using public sample content. Set CONTENT_DIR to the private content repo to edit."
 OPTION_SLOTS = "abcd"
+# Changes when the badge code or fonts change, so a deploy never serves stale cached previews.
+LAYOUT = hashlib.sha256(Path(badge.__file__).read_bytes() + repr(
+    [badge.NAME_FONT.stat().st_size, badge.TEXT_FONT.stat().st_size]).encode()).hexdigest()[:12]
+PREVIEW_IMMUTABLE = "private, max-age=2592000, immutable"
+_write_lock = threading.Lock()
 
 
 def _st():
@@ -49,13 +58,14 @@ def _write(fn):
     st = _st()
     if st.cfg.content_is_sample:
         return SAMPLE_BANNER
-    try:
-        fn()
-    except ContentError as e:
-        st.reload_content()  # surfaces broken files as the dashboard's content_error banner
-        return str(e)
-    st.reload_content()
-    return st.content_error  # on a failed reload the kiosk keeps the old content
+    with _write_lock:  # install in write order, so a slower earlier click never overwrites a newer one
+        try:
+            content = fn()
+        except ContentError as e:
+            st.reload_content()  # surfaces broken files as the dashboard's content_error banner
+            return str(e)
+        st.install_content(content)  # the writer already read and validated all of it: no second full load
+    return None
 
 
 def _body():
@@ -178,7 +188,7 @@ def review():
         "admin.html", page="review", st=st, kind=kind, status=status, tag=tag, rows=rows,
         all_tags=sorted({t for n in st.content.names for t in n.tags}), statuses=sorted(STATUSES),
         needs_owner=bool(a.get("needs_owner")), msg=a.get("msg"),
-        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER)
+        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, preview_key=preview_key)
 
 
 @bp.post("/status")
@@ -250,14 +260,43 @@ def add():
     return redirect(f"/admin/review?kind={kind}&status=approved&msg={quote(err or 'Added.')}")
 
 
+def preview_key(name: str) -> str:
+    """Cache key (and ?v=) of a name's preview: changes with the name text, tagline or badge layout."""
+    return hashlib.sha256(repr((name, SAMPLE_TAGLINE, LAYOUT)).encode()).hexdigest()[:16]
+
+
+def _preview_png(name: str, key: str) -> bytes:
+    """The preview from disk, rendered once per name and layout. Renders are seeded by the name, so a name
+    always looks the same; concurrent misses both render and the atomic rename keeps one."""
+    root = _st().cfg.data_dir / "previews"
+    d = root / LAYOUT
+    path = d / f"{key}.png"
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        pass
+    if not d.is_dir():  # first use of this layout: older layouts' previews are dead
+        d.mkdir(parents=True, exist_ok=True)
+        for old in root.iterdir():
+            if old != d and old.is_dir():
+                shutil.rmtree(old, ignore_errors=True)
+    buf = BytesIO()
+    render_badge(name, SAMPLE_TAGLINE, 3, rng=random.Random(name)).save(buf, "PNG")
+    data = buf.getvalue()
+    tmp = d / f".{key}.{threading.get_ident()}.tmp"
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+    return data
+
+
 @bp.get("/preview/<name_id>.png")
 def preview(name_id):
     n = next((n for n in _st().content.names if n.id == name_id), None)
     if n is None:
         abort(404)
-    buf = BytesIO()
-    render_badge(n.name, SAMPLE_TAGLINE, 3).save(buf, "PNG")
-    return Response(buf.getvalue(), mimetype="image/png", headers={"Cache-Control": "private, max-age=300"})
+    key = preview_key(n.name)
+    cache = PREVIEW_IMMUTABLE if request.args.get("v") == key else "private, max-age=300"
+    return Response(_preview_png(n.name, key), mimetype="image/png", headers={"Cache-Control": cache})
 
 
 def _print(img):
