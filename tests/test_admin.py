@@ -1,4 +1,6 @@
 import base64
+import threading
+import time
 from dataclasses import replace
 
 import pytest
@@ -164,6 +166,30 @@ def test_status_click_installs_content_without_reload(k, monkeypatch):
     assert k.state.names.pick(set(), k.state.rng) == ("d1", "Draft <b>Baby</b>")
     r = post(k, "/admin/add", data={"kind": "names", "name": "Fresh Tot", "tags": "dust"})
     assert r.status_code == 302 and any(n.name == "Fresh Tot" for n in k.state.content.approved_names)
+
+def test_concurrent_writes_install_in_write_order(k, monkeypatch):
+    first_wrote, real = threading.Event(), admin.set_status
+
+    def slow_first(*a):  # the first click writes, then stalls before it can install
+        c = real(*a)
+        if not first_wrote.is_set():
+            first_wrote.set()
+            time.sleep(0.3)  # without the lock, the second click writes and installs in here
+        return c
+
+    monkeypatch.setattr(admin, "set_status", slow_first)
+    click = lambda s: k.app.test_client().post(
+        "/admin/status", headers=POST, json={"kind": "names", "id": "d1", "status": s})
+    a = threading.Thread(target=click, args=("approved",))
+    a.start()
+    assert first_wrote.wait(5)
+    b = threading.Thread(target=click, args=("rejected",))
+    b.start()
+    a.join(), b.join()
+    on_disk = next(n for n in load_content(k.cfg.content_dir).names if n.id == "d1")
+    served = next(n for n in k.state.content.names if n.id == "d1")
+    assert on_disk.status == served.status == "rejected"  # the second write wins in both
+    assert "d1" not in {n.id for n in k.state.names._pool}
 
 def test_dashboard(k):
     k.state.content = replace(k.state.content, warnings=["watch <this>"])
