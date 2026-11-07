@@ -28,9 +28,9 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 SAMPLE_TAGLINE = "Dusty since the womb"
 SAMPLE_BANNER = "Using public sample content. Set CONTENT_DIR to the private content repo to edit."
 OPTION_SLOTS = "abcd"
-# Changes when the badge code or fonts change, so a deploy never serves stale cached previews.
-LAYOUT = hashlib.sha256(Path(badge.__file__).read_bytes() + repr(
-    [badge.NAME_FONT.stat().st_size, badge.TEXT_FONT.stat().st_size]).encode()).hexdigest()[:12]
+# Changes when the badge code or fonts change, so a deploy that alters the badge re-renders the previews.
+LAYOUT = hashlib.sha256(b"".join(p.read_bytes() for p in (Path(badge.__file__), badge.NAME_FONT,
+                                                           badge.TEXT_FONT))).hexdigest()[:12]
 PREVIEW_IMMUTABLE = "private, max-age=2592000, immutable"
 _write_lock = threading.Lock()
 
@@ -54,7 +54,7 @@ def _guard():
 
 
 def _write(fn):
-    """Run a content write, reload the kiosk, return an error string or None."""
+    """Run a content write, install its result in the kiosk, return an error string or None."""
     st = _st()
     if st.cfg.content_is_sample:
         return SAMPLE_BANNER
@@ -273,19 +273,23 @@ def _preview_png(name: str, key: str) -> bytes:
     path = d / f"{key}.png"
     try:
         return path.read_bytes()
-    except FileNotFoundError:
+    except OSError:
         pass
-    if not d.is_dir():  # first use of this layout: older layouts' previews are dead
-        d.mkdir(parents=True, exist_ok=True)
-        for old in root.iterdir():
-            if old != d and old.is_dir():
-                shutil.rmtree(old, ignore_errors=True)
     buf = BytesIO()
     render_badge(name, SAMPLE_TAGLINE, 3, rng=random.Random(name)).save(buf, "PNG")
     data = buf.getvalue()
     tmp = d / f".{key}.{threading.get_ident()}.tmp"
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
+    try:  # best effort: a full or read-only disk still serves the freshly rendered preview
+        if not d.is_dir():  # first use of this layout: older layouts' previews are dead
+            d.mkdir(parents=True, exist_ok=True)
+            for old in root.iterdir():
+                if old != d and old.is_dir():
+                    shutil.rmtree(old, ignore_errors=True)
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        log.warning("preview cache write failed in %s", d, exc_info=True)
+        tmp.unlink(missing_ok=True)
     return data
 
 

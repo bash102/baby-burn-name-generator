@@ -140,6 +140,15 @@ def test_preview_cache_hit_skips_render(k, monkeypatch):
     assert stale.data == first.data and "immutable" not in stale.headers["Cache-Control"]
     assert len(calls) == 1
 
+def test_preview_served_when_cache_dir_unwritable(k, monkeypatch):
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(admin.Path, "write_bytes", boom)
+    r = k.c.get("/admin/preview/d1.png", headers=AUTH)
+    assert r.status_code == 200 and r.data.startswith(b"\x89PNG")
+    assert not list((k.cfg.data_dir / "previews").rglob("*.tmp"))
+
+
 def test_preview_render_is_deterministic(k, monkeypatch):
     a = k.c.get("/admin/preview/d1.png", headers=AUTH).data
     for f in (k.cfg.data_dir / "previews").rglob("*.png"):
