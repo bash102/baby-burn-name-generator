@@ -90,15 +90,15 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 
 <details {{ 'open' if kind and msg }}><summary><b>Add a {{ kind[:-1] }}</b> (approved immediately)</summary>
 <form method="post" action="/admin/add"><input type="hidden" name="kind" value="{{ kind }}">
-{% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="40" required size="30">
+{% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="{{ max_name }}" required size="30">
 <input name="tags" placeholder="tags, comma separated" size="30"></p>
-{% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="32" required size="40"></p>
+{% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="{{ max_tagline }}" required size="40"></p>
 {% else %}<p><input name="prompt" placeholder="Question" required size="60">
 <select name="type"><option>single</option><option>multi</option></select></p>
-{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="55" size="40">
+{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="{{ max_option }}" size="40">
 <label><input type="checkbox" name="correct_{{ s }}"> correct</label>
 <input name="tags_{{ s }}" placeholder="tags" size="20"></p>{% endfor %}
-<p><input name="quip" placeholder="Quip (optional)" maxlength="60" size="40"></p>{% endif %}
+<p><input name="quip" placeholder="Quip (optional)" maxlength="{{ max_quip }}" size="40"></p>{% endif %}
 <button class="yes">Add</button></form></details>
 {% endif %}
 </main>

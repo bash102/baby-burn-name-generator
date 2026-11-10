@@ -360,3 +360,12 @@ def test_reprint_keeps_photo_qr(k, monkeypatch):
     (bid,) = (b[0] for b in k.state.recent_badges)
     assert post(k, "/admin/reprint", json={"id": bid}).status_code == 200
     assert calls[-1]["qr_url"] == r["photo_url"] and r["photo_url"]
+
+
+@pytest.mark.parametrize("kind,caps", [("names", ["MAX_NAME"]), ("taglines", ["MAX_TAGLINE"]),
+                                       ("questions", ["MAX_OPTION", "MAX_QUIP"])])
+def test_add_form_maxlength_matches_content_caps(k, kind, caps):
+    from app import content
+    page = k.c.get(f"/admin/review?kind={kind}", headers=AUTH).data.decode()
+    for cap in caps:
+        assert f'maxlength="{getattr(content, cap)}"' in page, cap

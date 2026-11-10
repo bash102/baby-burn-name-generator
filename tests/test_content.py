@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from app.content import BANNED_WORDS, ContentError, append_entry, load_content, main, set_status
+from app.content import BANNED_WORDS, MAX_OPTION, MAX_QUIP, ContentError, append_entry, load_content, main, set_status
 
 
 def _read(d, kind):
@@ -88,7 +88,7 @@ def test_text_length_caps(sample_content_dir, kind, limit, mk):
 
 def test_option_and_quip_length_caps(sample_content_dir):
     orig = _read(sample_content_dir, "questions")
-    for field, limit in (("option", 55), ("quip", 60)):
+    for field, limit in (("option", MAX_OPTION), ("quip", MAX_QUIP)):
         qs = _read(sample_content_dir, "questions")
         q = next(q for q in qs if q["id"] == "margarita")
         for n, ok in ((limit, True), (limit + 1, False)):

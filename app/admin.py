@@ -20,7 +20,8 @@ from app import badge
 from app.badge import render_badge
 from app.coloring import page_files, pick_page
 from app.config import PROVIDERS
-from app.content import KINDS, STATUSES, ContentError, append_entry, set_status
+from app.content import (KINDS, MAX_NAME, MAX_OPTION, MAX_QUIP, MAX_TAGLINE, STATUSES, ContentError, append_entry,
+                         set_status)
 from app.transform import get_provider
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,12 @@ _write_lock = threading.Lock()
 
 def _st():
     return current_app.extensions["babyburn"]
+
+
+@bp.context_processor
+def _limits():
+    """The Add form's maxlength values: the same caps the content validator enforces."""
+    return {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION, "max_quip": MAX_QUIP}
 
 
 @bp.before_request
