@@ -88,7 +88,7 @@ def test_text_length_caps(sample_content_dir, kind, limit, mk):
 
 def test_option_and_quip_length_caps(sample_content_dir):
     orig = _read(sample_content_dir, "questions")
-    for field, limit in (("option", 45), ("quip", 60)):
+    for field, limit in (("option", 55), ("quip", 60)):
         qs = _read(sample_content_dir, "questions")
         q = next(q for q in qs if q["id"] == "margarita")
         for n, ok in ((limit, True), (limit + 1, False)):

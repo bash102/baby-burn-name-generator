@@ -95,7 +95,7 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="32" required size="40"></p>
 {% else %}<p><input name="prompt" placeholder="Question" required size="60">
 <select name="type"><option>single</option><option>multi</option></select></p>
-{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="45" size="40">
+{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="55" size="40">
 <label><input type="checkbox" name="correct_{{ s }}"> correct</label>
 <input name="tags_{{ s }}" placeholder="tags" size="20"></p>{% endfor %}
 <p><input name="quip" placeholder="Quip (optional)" maxlength="60" size="40"></p>{% endif %}

@@ -18,7 +18,7 @@ KINDS: tuple[str, ...] = get_args(Kind)
 STATUSES = frozenset({"draft", "approved", "rejected"})
 QUESTION_TYPES = frozenset({"single", "multi"})
 # Max characters per field so badge and kiosk text always fit.
-MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 45, 60
+MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 55, 60
 
 # Safety net only: drug terms, real politicians, party names. The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
