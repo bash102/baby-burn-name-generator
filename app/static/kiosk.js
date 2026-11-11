@@ -39,7 +39,7 @@ const COPY = {
   yes: "Yes",
   no: "No",
   timeLeft: "Time left",
-  timeLow: "10 seconds left. You'll get a name either way!",
+  timeLow: n => `${n} seconds left. You'll get a name either way!`,
 };
 // Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
@@ -125,45 +125,51 @@ let stream = null;
 let epoch = 0;   // bumped on every screen change so stale async work is ignored
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 let idleMs = IDLE_MS;
-function show(...kids) { epoch++; idleMs = IDLE_MS; root.replaceChildren(...kids.filter(Boolean)); again.hidden = false; bumpIdle(); }
+function show(...kids) { epoch++; idleMs = IDLE_MS; root.replaceChildren(...kids.filter(Boolean)); again.hidden = false; againButton(); bumpIdle(); }
 const longIdle = () => { idleMs = IDLE_LONG_MS; bumpIdle(); };
 let urls = [];   // object URLs for the current guest, revoked on reset
 const objUrl = blob => { const u = URL.createObjectURL(blob); urls.push(u); return u; };
 function newGuest() {
   urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
-  // sessionP: the one POST /api/session per guest; finishing: finish() started; badge: reveal shown;
-  // deadline: countdown end (ms); autoWait: the time-limit finish is waiting on the server
-  S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false,
-    sessionP: null, finishing: false, badge: false, deadline: 0, autoWait: false }; }
+  // started: first tap done; sessionP: the one POST /api/session per guest; finishing: finish() started;
+  // badge: reveal shown; dropped: reset before the badge; deadline: countdown end (ms);
+  // autoWait: the time-limit finish is waiting on the server; quizAt: when quiz was fetched
+  S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false, started: false,
+    sessionP: null, finishing: false, badge: false, dropped: false, deadline: 0, autoWait: false, quizAt: 0 }; }
 
 // ---- Start over + countdown: live outside #screen, so show() keeps them ----
 let limitS = 0;   // KIOSK_TIME_LIMIT_S from /api/quiz; 0 = no countdown
 const again = h("div", { class: "again", hidden: "" });
-const clock = h("div", { class: "clock", role: "timer", "aria-label": COPY.timeLeft, hidden: "" });
+const clockTxt = h("span"), clock = h("div", { class: "clock", role: "timer", hidden: "" }, h("span", { class: "sr" }, COPY.timeLeft + " "), clockTxt);
 const live = h("div", { class: "sr", "aria-live": "polite" });   // announces the last 10 s once, not every tick
 document.body.append(again, clock, live);
 function againButton() {
   again.replaceChildren(btn(COPY.startOver, () => again.replaceChildren(
     h("span", {}, COPY.startOverQ), btn(COPY.yes, startOver, "yes"), btn(COPY.no, againButton, "skip"))));
 }
-function startOver() {
+// Before the badge (Start over, idle, error OK): camera off, delete this guest's photo, back to Start.
+// Fire-and-forget: never blocks the reset or shows an error, even if the session is still being created.
+function dropGuest() {
   const s = S;
-  if (s.badge) { if (s.hasPhoto) choose("done"); }   // same as the Done/Skip path
-  else {   // drop the photo; never blocks or shows an error, even if the session is still being created
-    stopCamera();
-    if (s.sessionP) s.sessionP.then(() => { if (s.hasPhoto) choose("delete", s.id); }, () => {});
-  }
+  s.dropped = true; stopCamera();
+  if (s.sessionP) s.sessionP.then(() => { if (s.hasPhoto) choose("delete", s.id); }, () => {});
+  toStart();
+}
+function startOver() {
+  if (!S.badge) return dropGuest();
+  if (S.hasPhoto) choose("done");   // after the badge: same as the Done/Skip path
   toStart();
 }
 let clockT;
 function startClock() {   // first tap after Start; later calls keep the same deadline
+  S.started = true;
   if (!limitS || S.deadline) return;
   S.deadline = Date.now() + limitS * 1000; clock.hidden = false; tick();
 }
 function tick() {
   const left = Math.max(0, Math.ceil((S.deadline - Date.now()) / 1000)), low = left <= 10;
-  clock.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-  if (low && !clock.classList.contains("low")) live.textContent = COPY.timeLow;
+  clockTxt.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  if (low && !clock.classList.contains("low")) live.textContent = COPY.timeLow(left);
   clock.classList.toggle("low", low);
   if (left === 0) return timeUp();
   clockT = setTimeout(tick, 250);
@@ -173,19 +179,35 @@ function hideClock() { stopClock(); clock.hidden = true; clock.classList.remove(
 // Time is up (camera or quiz): like "Just give me a name", skipping the photo if still on the camera.
 function timeUp() { stopCamera(); finish(true); }
 
+// The next guest's quiz (and the time limit) load while Start shows. An idle Start screen keeps an
+// untouched quiz for QUIZ_FRESH_MS, so admin edits still show up within a minute.
+const QUIZ_FRESH_MS = 60000;
 function toStart() {
+  const prev = S;
   stopCamera(); newGuest();
   show(h("h1", {}, COPY.startTitle), h("p", {}, COPY.startSub),
     btn(COPY.startTitle, snapScreen, "big"), btn(COPY.startSkipPhoto, skipPhoto, "skip"));
-  again.hidden = true; againButton(); hideClock();
-  api("/api/quiz").then(r => r.json()).then(d => { limitS = d.time_limit_s || 0; }).catch(() => {});
+  again.hidden = true; hideClock();
+  const s = S;
+  if (prev && !prev.started && prev.quiz && Date.now() - prev.quizAt < QUIZ_FRESH_MS) {
+    s.quiz = prev.quiz; s.retentionDays = prev.retentionDays; s.quizAt = prev.quizAt; return;
+  }
+  api("/api/quiz").then(r => { if (!r.ok) throw 0; return r.json(); }).then(d => {
+    limitS = d.time_limit_s || 0;
+    if (!s.quiz) { s.quiz = d.questions; s.retentionDays = d.retention_days; s.quizAt = Date.now(); }
+  }).catch(() => {});
 }
 
-// Idle: no touch for idleMs returns to Start (idle on the take-home screen counts as Done).
-// It waits while the time-limit finish is in progress, so that guest still gets their reveal.
+// Idle: no touch for idleMs returns to Start. Before the badge it drops the guest (photo deleted);
+// after it, take-home counts as Done. It waits while the time-limit finish is in progress.
 let idleT;
 function bumpIdle() { clearTimeout(idleT); idleT = setTimeout(idle, idleMs); }
-function idle() { if (S.autoWait) return bumpIdle(); if (S.onTakeHome) choose("done"); toStart(); }
+function idle() {
+  if (S.autoWait) return bumpIdle();
+  if (!S.badge) return dropGuest();
+  if (S.onTakeHome) choose("done");
+  toStart();
+}
 addEventListener("pointerdown", bumpIdle, true);
 
 // ---- Snap ----
@@ -202,7 +224,7 @@ function createSession(blob) {
     s.id = j.session_id; s.hasPhoto = j.has_photo;
   })();
 }
-function fail() { stopCamera(); hideClock(); show(h("h2", {}, COPY.error), btn("OK", toStart, "big")); }
+function fail() { stopCamera(); hideClock(); show(h("h2", {}, COPY.error), btn("OK", dropGuest, "big")); }
 async function skipPhoto(ev) {
   if (ev && ev.currentTarget) ev.currentTarget.disabled = true;   // one tap only: a second would make a second session
   startClock(); stopCamera(); const e = epoch;
@@ -250,7 +272,7 @@ async function quizScreen() {
     let d;
     try { const r = await api("/api/quiz"); if (!r.ok) throw 0; d = await r.json(); } catch { return e === epoch ? finish() : null; }
     if (e !== epoch) return;
-    S.quiz = d.questions; S.retentionDays = d.retention_days;
+    S.quiz ??= d.questions; S.retentionDays ??= d.retention_days;
   }
   if (S.qi >= S.quiz.length) return finish();
   const q = S.quiz[S.qi], picked = new Set();
@@ -292,7 +314,7 @@ function flash(q, picked) {
 async function finish(auto) {   // auto === true: the countdown ran out (a click passes an event)
   if (S.finishing) return;   // once per guest: button, failed quiz load and countdown can race
   S.finishing = true; stopClock();
-  show(h("h2", {}, COPY.revealing));
+  show(h("h2", {}, COPY.revealing)); again.hidden = true;   // back on the reveal, where Yes == Done
   const e = epoch, s = S;
   s.autoWait = auto === true;
   let r;
@@ -303,7 +325,10 @@ async function finish(auto) {   // auto === true: the countdown ran out (a click
     if (!res.ok) throw new Error("finish " + res.status);
     r = await res.json();
   } catch { return e === epoch ? fail() : null; } finally { s.autoWait = false; }
-  if (e !== epoch) return;
+  if (e !== epoch) {   // dropped while finishing: its QR was never shown, so don't keep the photo
+    if (s.dropped && s.hasPhoto) choose("delete", s.id);
+    return;
+  }
   S.badge = true; hideClock();
   S.retentionDays = r.retention_days || S.retentionDays;
   const photo = h("div", { class: "photo" }, COPY.developing);

@@ -95,7 +95,7 @@ The point is laughs. The quiz is a comedy bit, not a test. The name is a souveni
 - The kiosk only ever loads `approved` entries.
 - Owner review before go-live = reading/editing the YAML (or the admin page's review list) and flipping statuses.
 - Admin page (`/admin`, PIN-protected) on the Pi: add a question or name (added as `approved` since the owner wrote it), approve/reject drafts, see remaining-name count, test-print a badge, switch transform provider.
-- Question types supported: multiple choice (one correct), "what's missing", pick-all-that-apply. All tap-only.
+- Question types supported: single choice (one or more correct answers; any one counts), "what's missing", pick-all-that-apply. All tap-only.
 
 ### Trial bake-off (before the build is final)
 - A script runs a folder of test photos (owner-supplied, consenting friends) through both providers with the shared prompt and writes a local side-by-side HTML page: images, latency, approximate cost per image. Owner picks the winner and tunes the prompt.
