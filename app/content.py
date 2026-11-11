@@ -271,10 +271,8 @@ def _build(raw: dict[str, Any]) -> Content:
                 fb = None
             opts.append(Option(str(o.get("id")), str(o.get("text")), bool(o.get("correct", False)), otags, fb,
                                _words(ow, o, allowed, errs)))
-        # ceiling: a question with no correct option is allowed only as a pure preference question
-        # (every option tagged), which the sample content relies on.
-        if not fixed and opts and not any(o.correct for o in opts) and not all(o.tags for o in opts):
-            errs.append(f"{where}: needs a correct option (or tag every option for a preference question)")
+        # A question with no correct option is an opinion question (the kiosk shows "Noted."); answers
+        # still steer the name through their tags and words, so untagged options are allowed too.
         # several correct options are fine: a single-choice pick of any one of them counts as correct
         questions.append(Question(str(r.get("id")), str(r.get("type")), str(r.get("prompt")), opts,
                                   quip, str(status), bool(r.get("needs_owner", False)), fixed))
