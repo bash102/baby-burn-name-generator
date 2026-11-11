@@ -406,7 +406,10 @@ def _print(img, on_ok=None):
         log.exception("admin print failed")
         return jsonify(error=str(e) or type(e).__name__), 502
     if on_ok:
-        on_ok()
+        try:
+            on_ok()
+        except Exception:  # the label printed: never report a failure that invites a second print
+            log.exception("after-print step failed")
     return jsonify(ok=True)
 
 

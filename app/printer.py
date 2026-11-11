@@ -26,7 +26,9 @@ def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
 
 
 class PrintError(Exception):
-    pass
+    def __init__(self, msg: str, retry: bool = False):
+        super().__init__(msg)
+        self.retry = retry  # True only when nothing can have printed, so a retry can't make a duplicate
 
 
 def _file_printer(out_dir: Path) -> Callable[[Image.Image], None]:
@@ -47,9 +49,12 @@ def _usb_once(target: str, img: Image.Image) -> None:
         )
         result = send(instructions, printer_identifier=target, backend_identifier="pyusb")
     except Exception as e:
-        raise PrintError(f"printer error: {e}") from e
+        raise PrintError(f"printer error: {e}", retry=True) from e
     if not result.get("did_print"):
-        raise PrintError(f"printer did not confirm print: {result.get('outcome', 'unknown')}")
+        # "error": the printer reported a fault and printed nothing. Anything else ("sent", "unknown") may have
+        # printed without the status arriving in time, so it is not retried: an admin can reprint it.
+        outcome = result.get("outcome", "unknown")
+        raise PrintError(f"printer did not confirm print: {outcome}", retry=outcome == "error")
 
 
 def _usb_printer(target: str) -> Callable[[Image.Image], None]:
@@ -60,6 +65,8 @@ def _usb_printer(target: str) -> Callable[[Image.Image], None]:
                     return _usb_once(target, img)
                 except PrintError as e:
                     log.warning("print attempt %d failed: %s", attempt, e)
+                    if not e.retry:
+                        raise
                     if wait is None:
                         raise PrintError(f"{e} (after {attempt} attempts)") from e
                     sleep(wait)

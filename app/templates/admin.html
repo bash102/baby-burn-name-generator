@@ -152,12 +152,13 @@ const flash = (m, ok) => { const f = document.getElementById("flash"); f.textCon
 const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
   body: JSON.stringify(body || {})}).then(async r => {
     const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; });
-document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
+document.querySelectorAll("[data-post]").forEach(b => b.onclick = () => {
+  b.disabled = true;  // one tap, one request: a double tap on Reprint would print twice
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
     else if (/update\/sync$/.test(b.dataset.post)) flash("Update started — the kiosk restarts if there's a new version; check status in a minute", true);
     else b.textContent += " ✓";
-  }).catch(e => flash("Failed: " + e.message)));
+  }).catch(e => flash("Failed: " + e.message)).finally(() => { b.disabled = false; }); });
 const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};
 function shown(row, s) {
   row.dataset.status = s; row.querySelector(".st").textContent = s;

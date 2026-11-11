@@ -170,3 +170,13 @@ def test_usb_gives_up_after_three_attempts_waiting_2_then_4_under_the_lock(usb, 
         p(img)
     assert calls == [True, True, True] and waits == [(2, True), (4, True)]
     assert not printer._lock.locked()
+
+
+@pytest.mark.parametrize("outcome", ["sent", "unknown", None])
+def test_usb_unconfirmed_print_is_not_retried(usb, img, outcome):
+    """Sent but not confirmed may already be on the label: a retry would hand the guest a duplicate."""
+    p, outcomes, calls, waits = usb
+    outcomes += [{"did_print": False, **({"outcome": outcome} if outcome else {})}]
+    with pytest.raises(PrintError, match="did not confirm"):
+        p(img)
+    assert len(calls) == 1 and waits == []
