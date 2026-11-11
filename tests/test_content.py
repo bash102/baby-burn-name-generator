@@ -50,13 +50,13 @@ def test_duplicate_name_text_case_insensitive_rejected(sample_content_dir):
         load_content(sample_content_dir)
 
 
-def test_question_needs_a_correct_option(sample_content_dir):
+def test_question_without_a_correct_option_is_an_opinion_question(sample_content_dir):
     qs = _read(sample_content_dir, "questions")
     q = next(q for q in qs if q["id"] == "margarita")
-    q["options"][0].pop("correct")
+    q["options"][0].pop("correct")  # its other option is untagged too
     _write(sample_content_dir, "questions", qs)
-    with pytest.raises(ContentError, match="correct"):
-        load_content(sample_content_dir)
+    got = next(x for x in load_content(sample_content_dir).questions if x.id == "margarita")
+    assert not any(o.correct for o in got.options)
 
 
 def test_first_burn_exempt_from_correct(sample_content_dir):
@@ -359,3 +359,13 @@ def test_update_first_burn_structure_locked(sample_content_dir, change):
     with pytest.raises(ContentError):
         update_entry(sample_content_dir, "questions", "first_burn", change(opts))
     assert (sample_content_dir / "questions.yaml").read_bytes() == before
+
+
+def test_opinion_question_with_untagged_options_is_valid(sample_content_dir):
+    """No correct option and no tags is a plain opinion question: an edit that clears tags still saves."""
+    q = next(q for q in _read(sample_content_dir, "questions") if not q.get("fixed"))
+    fields = {"prompt": q["prompt"], "type": "single",
+              "options": [{"id": o["id"], "text": o["text"], "correct": False, "tags": []} for o in q["options"]]}
+    c = update_entry(sample_content_dir, "questions", q["id"], fields)
+    got = next(x for x in c.questions if x.id == q["id"])
+    assert not any(o.correct or o.tags for o in got.options)
