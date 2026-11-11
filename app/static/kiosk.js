@@ -224,7 +224,9 @@ function fail() { stopCamera(); show(h("h2", {}, COPY.error), btn("OK", dropGues
 async function skipPhoto(ev) {
   if (ev && ev.currentTarget) ev.currentTarget.disabled = true;   // one tap only: a second would make a second session
   S.started = true; stopCamera(); const e = epoch;
-  try { await createSession(null); } catch { return e === epoch ? fail() : null; }
+  try {   // a photo upload that already failed falls back to a session without a photo, like finish does
+    await createSession(null).catch(() => { if (e !== epoch) throw 0; S.sessionP = null; return createSession(null); });
+  } catch { return e === epoch ? fail() : null; }
   if (e === epoch) quizScreen();
 }
 
@@ -315,7 +317,7 @@ async function finish() {
   S.finishing = true;
   show(h("h2", {}, COPY.revealing)); again.hidden = true; noClock();   // both back on the reveal
   const e = epoch, s = S;
-  s.waitingSince = Date.now();
+  s.waitingSince = Date.now(); longIdle();   // the safety cap on a hung finish is IDLE_LONG_MS from here
   let r;
   try {
     if (s.sessionP) await s.sessionP.catch(() => { s.sessionP = null; });   // photo upload failed: go on without it
@@ -343,8 +345,8 @@ async function finish() {
     h("div", { class: "row" },
       S.hasPhoto ? btn(COPY.takeHome, takeHomeScreen, "big") : null,
       btn(S.hasPhoto ? COPY.skip : COPY.done, () => { if (S.hasPhoto) choose("done"); toStart(); }, "skip")));
+  longIdle();   // reveal: the long idle time, with or without a photo
   if (S.hasPhoto) {
-    longIdle();
     const e2 = epoch;
     // advance only once something is on screen: the dusty photo, or the original after the fallback
     pollPhoto(photo, e2).then(() => setTimeout(() => { if (e2 === epoch) takeHomeScreen(); }, REVEAL_ADVANCE_MS));
