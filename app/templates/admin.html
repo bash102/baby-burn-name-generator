@@ -80,7 +80,7 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% if not m.total %}<p>No guests yet.</p>{% else %}
 <p>{{ m.total }} guests, {{ m.photo_guests }} with a photo. <a href="/admin/matching.csv">Download CSV</a></p>
 <h2>Decided by</h2><table>{% for k, n, p in m.decided %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table>
-<h2>Photo state</h2><p>not_ready = the photo words were not back in time.</p>
+<h2>Photo state</h2><p>ready = photo words used; not_ready = not back in time; failed = the vision call errored; none = no photo.</p>
 <table>{% for k, n, p in m.photo_state %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table>
 <h2>Score histogram</h2><table><tr><th>score</th><th>guests</th></tr>{% for sc, n in m.histogram %}<tr><td>{{ sc }}</td><td>{{ n }}</td></tr>{% endfor %}</table>
 <h2>Look words detected</h2><table><tr><th>word</th><th>times</th><th>% of photo guests</th></tr>

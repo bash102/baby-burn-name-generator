@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import random
+import threading
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -102,6 +103,14 @@ def test_prompt_forbids_body_descriptors():
     for phrase in ("clothing, costume, colors, materials, accessories, lights and props",
                    "Never describe", "face, body, hair, skin, age, gender or ethnicity", '"looks"', "pink", "gnome"):
         assert phrase in p
+
+
+def test_prompt_without_looks_is_the_tag_only_prompt():
+    p = T.photo_prompt({"gnome"}, ())
+    assert p.startswith("Which of these tags describe the person's look or costume in the photo? Tags: ['gnome']. ")
+    assert "face, body, hair, skin, age, gender or ethnicity" in p
+    assert p.endswith('Reply with only a JSON array of the matching tags, e.g. ["tag"]. Use [] if none match.')
+    assert "looks" not in p
 
 
 @pytest.mark.parametrize("text, want", [
@@ -313,6 +322,52 @@ def test_match_log_failure_never_fails_finish(tmp_path, sample_content_dir):
     before = k.state.names.remaining()
     assert k.finish(k.session(photo=False))["name"]
     assert k.state.names.remaining() == before - 1
+
+
+def test_match_log_partial_failure_keeps_used_row(tmp_path):
+    s = store(tmp_path, N("a", "A"), N("b", "B"))
+    # A partial write, then a failure: RAISE(FAIL) keeps the statement's earlier changes, so only the savepoint
+    # rollback undoes them, and it must not undo the `used` insert.
+    s._db.executescript("CREATE TABLE junk (x); CREATE TRIGGER boom AFTER INSERT ON match_log BEGIN "
+                        "INSERT INTO junk VALUES (1); SELECT RAISE(FAIL, 'boom'); END;")
+    first = s.pick(set(), random.Random(0))[0]
+    s2 = NameStore(tmp_path / "n.sqlite3")  # a fresh connection sees only committed data
+    assert [r[0] for r in s2._db.execute("SELECT name_id FROM used")] == [first]
+    assert s2.match_rows() == [] and s2._db.execute("SELECT COUNT(*) FROM junk").fetchone()[0] == 0
+    assert s.pick(set(), random.Random(0))[0] == ({"a", "b"} - {first}).pop()
+
+
+def test_photo_state_failed_vs_not_ready(tmp_path, sample_content_dir):
+    class Broken(T.FakeProvider):
+        def tag(self, *a):
+            raise RuntimeError("vision down")
+
+    k = _kiosk(tmp_path, sample_content_dir, provider=Broken(0))
+    sid = k.session()
+    k.drain()
+    k.finish(sid)
+    assert k.state.names.match_rows()[-1]["photo_state"] == "failed"
+    assert "failed = the vision call errored" in k.c.get("/admin/matching", headers=AUTH).data.decode()
+
+    class Slow(T.FakeProvider):
+        release = threading.Event()
+
+        def tag(self, *a):
+            self.release.wait(5)
+            return set(), set()
+
+    k = _kiosk(tmp_path / "slow", sample_content_dir, provider=Slow(0))
+    k.finish(k.session())
+    Slow.release.set()
+    assert k.state.names.match_rows()[-1]["photo_state"] == "not_ready"
+
+
+def test_csv_cells_are_not_formulas(tmp_path, sample_content_dir):
+    k = _kiosk(tmp_path, sample_content_dir)
+    k.state.names.set_pool([N("x", "=HYPERLINK(1)")])
+    k.finish(k.session(photo=False))
+    got = list(csv.reader(io.StringIO(k.c.get("/admin/matching.csv", headers=AUTH).data.decode())))
+    assert got[1][6] == "'=HYPERLINK(1)" and got[1][5] == "x"
 
 
 def test_match_log_survives_restart(tmp_path):

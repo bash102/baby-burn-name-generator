@@ -228,12 +228,17 @@ def matching():
     return render_template("admin.html", page="matching", st=st, m=stats)
 
 
+def _cell(v):
+    """A CSV cell a spreadsheet will not run as a formula (names are owner-written, but still)."""
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
 @bp.get("/matching.csv")
 def matching_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(MATCH_LOG_COLS)
-    w.writerows([r[c] for c in MATCH_LOG_COLS] for r in _st().names.match_rows())
+    w.writerows([_cell(r[c]) for c in MATCH_LOG_COLS] for r in _st().names.match_rows())
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=match_log.csv"})
 

@@ -61,8 +61,7 @@ class NameStore:
             unused = self._unused()
             scored = [(sum(p), p, n) for n in unused for p in [points(n, looks, words, guest_tags)]]
             best = max((s for s, _, _ in scored), default=0)
-            choice = rng.choice([n for s, _, n in scored if s == best] if best else unused) if unused else None
-            pts = next((p for _, p, n in scored if n is choice), (0, 0, 0))
+            _, pts, choice = rng.choice([t for t in scored if t[0] == best]) if scored else (0, (0, 0, 0), None)
             alts = sorted(((s, n) for s, _, n in scored if n is not choice), key=lambda x: -x[0])[:3]
             if choice:
                 name_id, display = choice.id, choice.name
@@ -74,7 +73,10 @@ class NameStore:
                 name_id, display, decided = f"{RESERVED_NAME_PREFIX}{n}", f"Dusty Stranger #{n}", "fallback_stranger"
             now = datetime.now(timezone.utc).isoformat()
             self._db.execute("INSERT INTO used(name_id, display, given_at) VALUES (?,?,?)", (name_id, display, now))
-            try:  # tuning data only: a logging fault must never cost the guest their name
+            # Tuning data only: a logging fault must never cost the guest their name or undo the `used` row
+            # (never-repeat), so the log write gets its own savepoint inside the pick's transaction.
+            self._db.execute("SAVEPOINT log")
+            try:
                 self._db.execute(
                     f"INSERT INTO match_log({', '.join(MATCH_LOG_COLS)}) VALUES ({', '.join('?' * len(MATCH_LOG_COLS))})",
                     (now, photo_state, json.dumps(sorted(looks)), json.dumps(sorted(words)), json.dumps(sorted(guest_tags)),
@@ -82,6 +84,8 @@ class NameStore:
                      json.dumps([{"name_id": a.id, "score": s} for s, a in alts])))
             except sqlite3.Error:
                 log.exception("match_log write failed")
+                self._db.execute("ROLLBACK TO log")
+            self._db.execute("RELEASE log")
             if explain is not None:
                 explain.update(name=display, score=sum(pts), alts=[(a.name, s) for s, a in alts])
             return name_id, display

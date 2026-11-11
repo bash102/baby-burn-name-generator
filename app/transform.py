@@ -29,7 +29,17 @@ _PHOTO_PROMPT = (
 )
 
 
+_PRIVACY = "Never describe their face, body, hair, skin, age, gender or ethnicity. "
+# Without descriptors.yaml (no looks): the original tag-only prompt and JSON-array reply, plus the privacy line.
+_TAG_PROMPT = (
+    "Which of these tags describe the person's look or costume in the photo? Tags: {vocab}. " + _PRIVACY +
+    "Reply with only a JSON array of the matching tags, e.g. [\"tag\"]. Use [] if none match."
+)
+
+
 def photo_prompt(vocab: Collection[str], looks: Collection[str]) -> str:
+    if not looks:
+        return _TAG_PROMPT.format(vocab=sorted(vocab))
     return _PHOTO_PROMPT.format(vocab=sorted(vocab), looks=sorted(looks), max_looks=MAX_WORDS)
 
 

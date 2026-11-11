@@ -268,9 +268,12 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
                 if q.fixed == "first_burn" and first_burn is None:
                     first_burn = o.first_burn
     f, photo_state = s.tag_future, "none"
-    if f:
-        photo_state = "not_ready"
-        if f.done() and not f.exception():  # costume tags and looks only if ready; never wait
+    if f:  # costume tags and looks only if ready; never wait
+        if not f.done():
+            photo_state = "not_ready"
+        elif f.exception():
+            photo_state = "failed"
+        else:
             photo_tags, looks = f.result()
             tags |= photo_tags
             photo_state = "ready"
