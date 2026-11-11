@@ -535,6 +535,20 @@ def test_photo_delete_validates(k):
     assert f"tmp/{tok}/original.jpg" in k.keys()  # the refusals removed nothing
 
 
+def test_when_shows_local_date_and_time(k, monkeypatch):
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        assert admin.when("2026-11-15T02:05:09.123+00:00") == "Sat Nov 14, 9:05 PM"
+        assert admin.when("2026-11-14T16:30:00+00:00") == "Sat Nov 14, 11:30 AM"
+        assert admin.when("") == "" and admin.when(None) is None and admin.when("junk") == "junk"
+        k.finish(k.session(photo=False))
+        assert admin.when(k.state.names.badges()[0]["ts"]) in k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
 def test_photo_delete_reports_cloud_failure(k, monkeypatch):
     tok = _guest(k, "album")
 

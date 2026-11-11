@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 from collections import Counter
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -50,6 +51,16 @@ def _limits():
     """The Add and Edit forms' maxlength values: the same caps the content validator enforces."""
     return {"limits": {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION,
                        "max_quip": MAX_QUIP, "max_prompt": MAX_PROMPT}}
+
+
+@bp.app_template_filter("when")
+def when(ts) -> str:
+    """A stored UTC ISO time in the Pi's local zone, e.g. "Sat Nov 14, 9:05 PM"; anything unparsable as is."""
+    try:
+        d = datetime.fromisoformat(ts).astimezone()
+    except (TypeError, ValueError):
+        return ts
+    return f"{d:%a %b} {d.day}, {d.hour % 12 or 12}:{d:%M %p}"
 
 
 @bp.before_request

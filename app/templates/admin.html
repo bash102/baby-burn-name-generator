@@ -90,16 +90,16 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% for w, d, sup, low in m.supply_demand %}<tr class="{{ 'low' if low }}"><td>{{ w }}</td><td>{{ d }}</td><td>{{ sup }}</td></tr>{% endfor %}</table>
 <h2>Look words never detected</h2><p>{% for w in m.never %}<span class="tag w">{{ w }}</span>{% else %}All detected at least once.{% endfor %}</p>
 {% if m.total %}<h2>Most recent 20</h2>
-<table><tr><th>time (UTC)</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
-{% for r in m.recent %}<tr><td>{{ r.ts[11:19] }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
+<table><tr><th>time</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
+{% for r in m.recent %}<tr><td>{{ r.ts|when }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
 <td>{{ r.display }}</td><td>{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table>{% endif %}
 
 {% elif page == "reprints" %}
 <h1>Reprint a badge</h1>
 <form class="filters" method="get"><input name="q" value="{{ q }}" placeholder="name contains…" autofocus> <button>Search</button>
 {% if q %}<a href="/admin/reprints">clear</a>{% endif %} <b>{{ badges|length }}</b> shown</form>
-<table><tr><th>time (UTC)</th><th>name</th><th>tagline</th><th>printed?</th><th></th></tr>
-{% for b in badges %}<tr><td>{{ b.ts[11:19] }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
+<table><tr><th>time</th><th>name</th><th>tagline</th><th>printed?</th><th></th></tr>
+{% for b in badges %}<tr><td>{{ b.ts|when }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
 <td>{% if b.printed %}yes{% else %}<span class="low">not printed</span>{% endif %}</td>
 <td><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button>
 {% if b.photo_url %}<button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": b.photo_url.rsplit("/", 1)[-1]}|tojson|forceescape }}'
