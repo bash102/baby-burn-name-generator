@@ -1,7 +1,9 @@
 """Brother QL-800 printing (DK-1234 60x86 mm labels), or PNG files for dev."""
+import logging
 import threading
 import time
 from pathlib import Path
+from time import sleep  # module attribute so tests can skip the waits
 from typing import Callable
 
 from brother_ql.backends.helpers import send
@@ -9,7 +11,9 @@ from brother_ql.conversion import convert
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
+log = logging.getLogger(__name__)
 _lock = threading.Lock()  # one print job at a time
+RETRY_WAITS_S = (2, 4)  # USB only: seconds before each retry after a failed attempt (3 attempts in all)
 
 
 def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
@@ -22,7 +26,9 @@ def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
 
 
 class PrintError(Exception):
-    pass
+    def __init__(self, msg: str, retry: bool = False):
+        super().__init__(msg)
+        self.retry = retry  # True only when the job never reached the printer, so a retry can't make a duplicate
 
 
 def _file_printer(out_dir: Path) -> Callable[[Image.Image], None]:
@@ -35,19 +41,38 @@ def _file_printer(out_dir: Path) -> Callable[[Image.Image], None]:
     return print_
 
 
+def _usb_once(target: str, img: Image.Image) -> None:
+    try:
+        instructions = convert(
+            BrotherQLRaster("QL-800"), [img],
+            label="60x86", rotate="90", threshold=70, dither=False, cut=True,
+        )
+        result = send(instructions, printer_identifier=target, backend_identifier="pyusb")
+    except Exception as e:
+        # brother_ql's pyusb backend raises ValueError("Device not found") before writing anything. Any other
+        # error (a USB error or timeout) can come from the status read after the job was written, so it may
+        # have printed: not retried, an admin can reprint it.
+        raise PrintError(f"printer error: {e}", retry=str(e) == "Device not found") from e
+    if not result.get("did_print"):
+        # "error": the printer reported a fault. Anything else ("sent", "unknown") may have printed without
+        # the status arriving in time, so it is not retried.
+        outcome = result.get("outcome", "unknown")
+        raise PrintError(f"printer did not confirm print: {outcome}", retry=outcome == "error")
+
+
 def _usb_printer(target: str) -> Callable[[Image.Image], None]:
     def print_(img: Image.Image) -> None:
-        with _lock:
-            try:
-                instructions = convert(
-                    BrotherQLRaster("QL-800"), [img],
-                    label="60x86", rotate="90", threshold=70, dither=False, cut=True,
-                )
-                result = send(instructions, printer_identifier=target, backend_identifier="pyusb")
-            except Exception as e:
-                raise PrintError(f"printer error: {e}") from e
-            if not result.get("did_print"):
-                raise PrintError(f"printer did not confirm print: {result.get('outcome', 'unknown')}")
+        with _lock:  # held across retries, so another job can't land between a failed attempt and its retry
+            for attempt, wait in enumerate((*RETRY_WAITS_S, None), 1):
+                try:
+                    return _usb_once(target, img)
+                except PrintError as e:
+                    log.warning("print attempt %d failed: %s", attempt, e)
+                    if not e.retry:
+                        raise
+                    if wait is None:
+                        raise PrintError(f"{e} (after {attempt} attempts)") from e
+                    sleep(wait)
 
     return print_
 

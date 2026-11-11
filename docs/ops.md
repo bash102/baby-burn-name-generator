@@ -191,8 +191,10 @@ The dashboard shows:
 - cloud errors (uploads or deletes that failed)
 
 Common jobs:
-- Reprint a badge: open the guest's entry in admin and press **Reprint**.
+- Reprint a badge: admin › **Reprint** (`/admin/reprints`), search part of the name, press **Reprint**.
 - Switch AI provider: use the provider control in admin (no restart needed).
+
+**Print retry and reprints.** On the USB printer a print that failed before reaching the printer ("Device not found") or that the printer reported as an error is retried twice, 2 s then 4 s later (`RETRY_WAITS_S` in `app/printer.py`), holding the print queue so nothing prints in between; only after the third failure does the guest see "Badge jammed!". Any other failure (a USB error or timeout, or a print sent but never confirmed) is not retried, since it may have printed; the guest sees "Badge jammed!" and you can reprint it. The retry covers brief USB glitches, not a printer that has switched itself off: set the printer's Auto Power Off to None. Every badge, printed or not, is saved in the `badges` table of `data/names.sqlite3`, so the Reprint page survives restarts. It lists failed prints first ("not printed" in red), then newest first. A reprint is the identical badge (same name, tagline, First Burn line, border and photo QR), goes through the same offsets and retries, and marks the row printed. `reset_event.py` clears this list along with the names.
 
 **Look and vibe words.** `descriptors.yaml` in the content repo lists `looks` (things visible on a costume: colors, materials, accessories, lights, props) and `vibes` (moods only quiz answers imply). Names and quiz answer options can carry up to 8 of these `words` (edit them on the admin review page; unknown words are refused). The photo call picks looks from the list (it is told never to describe face, body, hair, skin, age, gender or ethnicity), and the name pick scores 4 per photo look match, up to 2 for answer-word matches and up to 1 for a tag match, so one photo match outweighs everything else (weights in `app/names.py`). Without `descriptors.yaml` matching works on tags alone, as before. To tune: the dashboard's **Tuning** table shows the last 10 guests (memory only, gone on restart) with their looks, answer words, tags, the chosen name's score and the next best names; **Matching** (`/admin/matching`) has event-wide numbers from the `match_log` table in `data/names.sqlite3` (one row per badge: words, scores, what decided it; never the photo or its link), including look words that names are running out of (red) and look words never detected, plus a CSV export. If a look keeps showing up with few names left, add names carrying it.
 
@@ -225,7 +227,7 @@ sudo systemctl start $UNIT
 
 `<clone>` is `~/baby-burn-name-generator` or `~/apps/baby-burn-name-generator`. `reset_event.py` refuses to run while either `babyburn` or `app-babyburn` is active and prints which to stop.
 
-`reset_event.py` deletes `data/names.sqlite3` (given names and the match log), empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
+`reset_event.py` deletes `data/names.sqlite3` (given names, the match log and the reprint list), empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
 
 ## 9. After the party
 

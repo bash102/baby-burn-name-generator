@@ -182,7 +182,7 @@ def dashboard():
     return render_template(
         "admin.html", page="dashboard", st=st, by_kind=by_kind, remaining=st.names.remaining(),
         by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
-        providers=sorted(PROVIDERS), recent=list(st.recent_badges)[::-1],
+        providers=sorted(PROVIDERS),
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
         updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"),
         tuning=list(st.tuning)[::-1])
@@ -399,23 +399,35 @@ def preview(name_id):
     return Response(_preview_png(n.name, key), mimetype="image/png", headers={"Cache-Control": cache})
 
 
-def _print(img):
+def _print(img, on_ok=None):
     try:
         _st().printer(img)
     except Exception as e:  # any printer fault (PrintError, USB OSError) is a JSON error, never a 500
         log.exception("admin print failed")
         return jsonify(error=str(e) or type(e).__name__), 502
+    if on_ok:
+        try:
+            on_ok()
+        except Exception:  # the label printed: never report a failure that invites a second print
+            log.exception("after-print step failed")
     return jsonify(ok=True)
+
+
+@bp.get("/reprints")
+def reprints():
+    st, q = _st(), request.args.get("q", "")
+    return render_template("admin.html", page="reprints", st=st, q=q, badges=st.names.badges(q))
 
 
 @bp.post("/reprint")
 def reprint():
     id_ = _body().get("id")
-    badge = next((b for b in list(_st().recent_badges) if b[0] == id_), None)
-    if badge is None:
+    names = _st().names
+    b = names.badge(id_) if isinstance(id_, str) else None
+    if b is None:
         return jsonify(error="no such badge"), 404
-    _, _, display, tagline, first_burn, photo_url = badge
-    return _print(render_badge(display, tagline, first_burn, qr_url=photo_url))
+    img = render_badge(b["display"], b["tagline"], b["first_burn"], qr_url=b["photo_url"], rng=random.Random(b["id"]))
+    return _print(img, on_ok=lambda: names.mark_printed(id_))
 
 
 @bp.post("/test-print")
