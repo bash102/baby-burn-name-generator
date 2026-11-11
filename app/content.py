@@ -3,6 +3,7 @@
 import os
 import re
 import stat
+import string
 import sys
 import tempfile
 import threading
@@ -18,7 +19,7 @@ KINDS: tuple[str, ...] = get_args(Kind)
 STATUSES = frozenset({"draft", "approved", "rejected"})
 QUESTION_TYPES = frozenset({"single", "multi"})
 # Max characters per field so badge and kiosk text always fit.
-MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP = 40, 32, 55, 60
+MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP, MAX_PROMPT = 40, 32, 55, 60, 200
 
 # Safety net only: drug terms, real politicians, party names. The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
@@ -198,7 +199,7 @@ def _build(raw: dict[str, Any]) -> Content:
         fixed = r.get("fixed")
         if fixed not in (None, "first_burn"):
             errs.append(f"{where}: fixed must be 'first_burn' or absent")
-        _check_text(where + ".prompt", r.get("prompt"), ok, errs, 200)
+        _check_text(where + ".prompt", r.get("prompt"), ok, errs, MAX_PROMPT)
         quip = r.get("quip") or ""
         if quip:
             _check_text(where + ".quip", quip, ok, errs, MAX_QUIP)
@@ -297,6 +298,88 @@ def append_entry(dir: Path, kind: Kind, entry: dict) -> Content:
     with _LOCK:
         raw = _read_raw(dir)
         raw[kind].append(dict(entry))
+        return _commit(dir, kind, raw)
+
+
+_EDITABLE = {"names": {"name", "tags"}, "taglines": {"text"}, "questions": {"prompt", "type", "quip", "options"}}
+_OPTION_KEYS = {"id", "text", "correct", "tags"}
+
+
+def _str(where: str, v: Any) -> str:
+    if not isinstance(v, str):
+        raise ContentError(f"{where}: must be a string")
+    return v.strip()
+
+
+def _tag_list(where: str, v: Any) -> list[str]:
+    if not isinstance(v, list) or not all(isinstance(t, str) for t in v):
+        raise ContentError(f"{where}: tags must be a list of strings")
+    return list(dict.fromkeys(t.strip().lower() for t in v if t.strip()))  # deduped, order kept
+
+
+def _edit_options(where: str, old: list[dict], new: Any, fixed: bool) -> list[dict]:
+    """The question's new option list: existing options keep their id and any other keys."""
+    most = max(4, len(old))  # never force dropping options a question already has
+    if not isinstance(new, list) or not all(isinstance(o, dict) for o in new) or not 2 <= len(new) <= most:
+        raise ContentError(f"{where}: options must be a list of 2-{most} objects")
+    by_id = {o.get("id"): o for o in old}
+    given = [o.get("id") for o in new if "id" in o]
+    if not all(isinstance(i, str) for i in given) or len(given) != len(set(given)) or not set(given) <= by_id.keys():
+        raise ContentError(f"{where}: option ids must be existing, distinct ids of this question")
+    if fixed and [o.get("id") for o in new] != [o.get("id") for o in old]:  # same count, ids and order
+        raise ContentError(f"{where}: the first-burn question's options are fixed; only their text can change")
+    free = iter(s for s in string.ascii_lowercase if s not in by_id)  # never reuse an old (maybe removed) id
+    out = []
+    for o in new:
+        if bad := sorted(set(o) - _OPTION_KEYS):
+            raise ContentError(f"{where}: option fields {bad} cannot be edited")
+        cur = dict(by_id.get(o.get("id")) or {"id": next(free)})
+        cur["text"] = _str(f"{where}.text", o.get("text"))
+        correct, tags = o.get("correct", False), _tag_list(where, o.get("tags", []))
+        if not isinstance(correct, bool):
+            raise ContentError(f"{where}: correct must be true or false")
+        if fixed:
+            if correct != bool(cur.get("correct")) or sorted(tags) != sorted(_tag_list(where, cur.get("tags") or [])):
+                raise ContentError(f"{where}: the first-burn question's options are fixed; only their text can change")
+        else:
+            cur.pop("correct", None)
+            cur.pop("tags", None)
+            if correct:
+                cur["correct"] = True
+            if tags:
+                cur["tags"] = tags
+        out.append(cur)
+    return out
+
+
+def update_entry(dir: Path, kind: Kind, id: str, fields: dict) -> Content:
+    """Edit the owner-editable fields of one entry (never id or status); any problem writes nothing."""
+    _check_kind(kind)
+    if not isinstance(fields, dict):
+        raise ContentError("fields must be an object")
+    where = f"{kind}[{id}]"
+    if bad := sorted(set(fields) - _EDITABLE[kind]):
+        raise ContentError(f"{where}: fields {bad} cannot be edited")
+    with _LOCK:
+        raw = _read_raw(dir)
+        r = next((r for r in raw[kind] if isinstance(r, dict) and r.get("id") == id), None)
+        if r is None:
+            raise ContentError(f"{where}: no such entry")
+        fixed = bool(r.get("fixed"))
+        for k, v in fields.items():
+            if k == "tags":
+                r["tags"] = _tag_list(where, v)
+            elif k == "options":
+                r["options"] = _edit_options(where, [o for o in r.get("options") or [] if isinstance(o, dict)], v, fixed)
+            elif k == "quip":
+                if quip := _str(where + ".quip", v):
+                    r["quip"] = quip
+                else:
+                    r.pop("quip", None)
+            elif k == "type" and fixed and v != r.get("type"):
+                raise ContentError(f"{where}: the first-burn question's type is fixed")
+            else:
+                r[k] = _str(f"{where}.{k}", v)  # name, text, prompt, type: _commit validates the values
         return _commit(dir, kind, raw)
 
 

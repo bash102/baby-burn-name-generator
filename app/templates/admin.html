@@ -22,15 +22,23 @@ button.yes{background:#2e7d32;color:#fff;border-color:#2e7d32}button.no{backgrou
 .note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:#2e7d32}
 form.filters,details{margin:10px 0}form.filters>*{margin-right:10px}
 input,select,textarea{font:inherit;padding:4px}
+#flash{margin:6px 0 0}
+@media (max-width:600px){.row{flex-wrap:wrap}.row .body{flex-basis:100%}}
+button.save{background:#2b2118;color:#fff;border-color:#2b2118}button:disabled{opacity:.5;cursor:default}
+form.ed{margin-top:8px;max-width:640px}form.ed .opt{border-left:3px solid #e5dccb;padding-left:8px;margin:8px 0}
+form.ed .f{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0}
+form.ed .f>label{display:flex;gap:6px;align-items:center;flex:1 1 14em}form.ed .f>label.chk{flex:none}
+form.ed .f>label>span{flex:none;min-width:4.5em;font-size:13px;color:#5a4a3a}
+form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 </style></head><body>
 <header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
-<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a></header>
+<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a>
+<div id="flash" class="banner err" hidden></div></header>
 <main>
 {% if sample_banner %}<div class="banner err">{{ sample_banner }}</div>{% endif %}
 {% if st.content_error %}<div class="banner err"><b>Content error (kiosk is using the previous content):</b>
 {{ st.content_error }}</div>{% endif %}
 {% if msg %}<div class="banner {{ 'ok' if msg == 'Added.' else 'err' }}">{{ msg }}</div>{% endif %}
-<div id="flash" class="banner err" hidden></div>
 
 {% if page == "dashboard" %}
 <h1>Dashboard</h1>
@@ -72,40 +80,41 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <button type="button" id="all-yes">Approve all visible</button></form>
 
 {% for r in rows %}
-<div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}">
+<div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}" data-edit='{{ edit_data(kind, r)|tojson|forceescape }}'>
 {% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}">{% endif %}
 <div class="body">
-{% if kind == "names" %}<b>{{ r.name }}</b> {% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}
-{% elif kind == "taglines" %}<b>{{ r.text }}</b>
-{% else %}<b>{{ r.prompt }}</b> ({{ r.type }}){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
-<ul>{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
+{% if kind == "names" %}<b class="t">{{ r.name }}</b> <span class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>
+{% elif kind == "taglines" %}<b class="t">{{ r.text }}</b>
+{% else %}<b class="t">{{ r.prompt }}</b> (<span class="ty">{{ r.type }}</span>){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
+<ul class="opts">{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
 {% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}</li>{% endfor %}</ul>
-{% if r.quip %}<div>Quip: <i>{{ r.quip }}</i></div>{% endif %}{% endif %}
+<div class="quip" {{ "hidden" if not r.quip }}>Quip: <i>{{ r.quip }}</i></div>{% endif %}
 {% if r.needs_owner %}<div class="note">Needs your review{% if r.note %}: {{ r.note }}{% endif %}</div>
 {% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}
 <small class="st">{{ r.status }}</small></div>
-<div class="acts"><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
+<div class="acts"><button type="button" class="edit">Edit</button><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
 </div>
 {% else %}<p>Nothing matches these filters.</p>{% endfor %}
 
 <details {{ 'open' if kind and msg }}><summary><b>Add a {{ kind[:-1] }}</b> (approved immediately)</summary>
 <form method="post" action="/admin/add"><input type="hidden" name="kind" value="{{ kind }}">
-{% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="{{ max_name }}" required size="30">
+{% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="{{ limits.max_name }}" required size="30">
 <input name="tags" placeholder="tags, comma separated" size="30"></p>
-{% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="{{ max_tagline }}" required size="40"></p>
-{% else %}<p><input name="prompt" placeholder="Question" required size="60">
+{% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="{{ limits.max_tagline }}" required size="40"></p>
+{% else %}<p><input name="prompt" placeholder="Question" maxlength="{{ limits.max_prompt }}" required size="60">
 <select name="type"><option>single</option><option>multi</option></select></p>
-{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="{{ max_option }}" size="40">
+{% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="{{ limits.max_option }}" size="40">
 <label><input type="checkbox" name="correct_{{ s }}"> correct</label>
 <input name="tags_{{ s }}" placeholder="tags" size="20"></p>{% endfor %}
-<p><input name="quip" placeholder="Quip (optional)" maxlength="{{ max_quip }}" size="40"></p>{% endif %}
+<p><input name="quip" placeholder="Quip (optional)" maxlength="{{ limits.max_quip }}" size="40"></p>{% endif %}
 <button class="yes">Add</button></form></details>
 {% endif %}
 </main>
 <script>
 const flash = (m, ok) => { const f = document.getElementById("flash"); f.textContent = m; f.hidden = !m; f.className = "banner " + (ok ? "ok" : "err"); };
 const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
-  body: JSON.stringify(body || {})}).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status); });
+  body: JSON.stringify(body || {})}).then(async r => {
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; });
 document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
@@ -119,8 +128,79 @@ function shown(row, s) {
 }
 const setStatus = (row, s) => post("/admin/status", {kind, id: row.dataset.id, status: s}).then(() => shown(row, s));
 const count = () => { const c = document.getElementById("count"); if (c) c.textContent = document.querySelectorAll(".row:not(.gone)").length; };
-document.querySelectorAll(".row .acts button").forEach(b => b.onclick = () =>
+document.querySelectorAll(".row .acts button[data-s]").forEach(b => b.onclick = () =>
   setStatus(b.closest(".row"), b.dataset.s).then(() => flash("")).catch(e => flash("Failed: " + e.message)));
+// In-place edit: the form is built from the row's data-edit JSON; user text only goes in via value/textContent.
+const LIM = {{ limits|tojson }};
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const field = (name, value, max, placeholder) => { const i = el("input", {name, value: value || "", placeholder}); if (max) i.maxLength = max; return i; };
+const tagList = s => s.split(",").map(t => t.trim()).filter(Boolean);
+const tagSpans = ts => ts.map(t => el("span", {className: "tag", textContent: t}));
+function paint(row, d) {
+  row.dataset.edit = JSON.stringify(d);
+  const t = row.querySelector(".t");
+  if (kind === "names") {
+    t.textContent = d.name; row.querySelector(".tags").replaceChildren(...tagSpans(d.tags));
+    row.querySelector("img").src = "/admin/preview/" + encodeURIComponent(row.dataset.id) + ".png?v=" + d.key;
+  } else if (kind === "taglines") t.textContent = d.text;
+  else {
+    t.textContent = d.prompt; row.querySelector(".ty").textContent = d.type;
+    row.querySelector(".opts").replaceChildren(...d.options.map(o => el("li", {className: o.correct ? "correct" : ""},
+      o.text + (o.correct ? " (correct) " : " "), ...tagSpans(o.tags))));
+    const q = row.querySelector(".quip"); q.hidden = !d.quip; q.querySelector("i").textContent = d.quip;
+  }
+}
+function fields(f, d) {
+  const v = n => f.elements[n].value;
+  if (kind === "names") return {name: v("name"), tags: tagList(v("tags"))};
+  if (kind === "taglines") return {text: v("text")};
+  const out = {prompt: v("prompt"), quip: v("quip")};
+  if (!d.fixed) out.type = v("type");
+  out.options = [...f.querySelectorAll(".opt")].map((p, i) => {
+    const o = {text: v("opt" + i)};
+    if (p.dataset.id) o.id = p.dataset.id;
+    if (!d.fixed) { o.correct = f.elements["correct" + i].checked; o.tags = tagList(v("tags" + i)); }
+    return o;
+  }).filter(o => d.fixed || o.text.trim());  // a blank row drops that option
+  return out;
+}
+function openEdit(row) {
+  if (row.querySelector("form.ed")) return;
+  const d = JSON.parse(row.dataset.edit), f = el("form", {className: "ed"});
+  const line = (...k) => el("div", {className: "f"}, ...k), lab = (text, input) => el("label", {}, el("span", {}, text), input);
+  if (kind === "names") f.append(line(lab("Name", field("name", d.name, LIM.max_name, "Name"))),
+                                 line(lab("Tags", field("tags", d.tags.join(", "), 0, "comma separated"))));
+  else if (kind === "taglines") f.append(line(lab("Tagline", field("text", d.text, LIM.max_tagline, "Tagline"))));
+  else {
+    const type = el("select", {name: "type", disabled: d.fixed}, el("option", {}, "single"), el("option", {}, "multi"));
+    type.value = d.type;
+    f.append(line(lab("Question", field("prompt", d.prompt, LIM.max_prompt, "Question"))), line(lab("Type", type)));
+    // every existing option gets a slot (never drop extras), plus blanks up to 4; the fixed question: its own only
+    const n = d.fixed ? d.options.length : Math.max(4, d.options.length);
+    for (let i = 0; i < n; i++) {
+      const o = d.options[i] || {text: "", correct: false, tags: []};
+      const r = el("div", {className: "opt"}, line(lab("Answer " + (i + 1), field("opt" + i, o.text, LIM.max_option, "Answer text"))));
+      if (o.id) r.dataset.id = o.id;
+      if (!d.fixed) r.append(line(el("label", {className: "chk"}, el("input", {type: "checkbox", name: "correct" + i, checked: o.correct}), " correct"),
+                                  lab("tags", field("tags" + i, o.tags.join(", "), 0, "comma separated"))));
+      f.append(r);
+    }
+    f.append(line(lab("Quip", field("quip", d.quip, LIM.max_quip, "optional"))));
+  }
+  const save = el("button", {className: "save"}, "Save");
+  f.append(save, " ", el("button", {type: "button", onclick: () => f.remove()}, "Cancel"));
+  f.onkeydown = e => { if (e.key === "Escape") f.remove(); };
+  f.onsubmit = e => {
+    e.preventDefault();
+    save.disabled = true;
+    post("/admin/edit", {kind, id: row.dataset.id, fields: fields(f, d)})
+      .then(j => { paint(row, j.row); f.remove(); flash("Saved.", true); })
+      .catch(e => { save.disabled = false; flash("Failed: " + e.message); });
+  };
+  row.querySelector(".body").append(f);
+  f.elements[0].focus();
+}
+document.querySelectorAll(".row .edit").forEach(b => b.onclick = () => openEdit(b.closest(".row")));
 const all = document.getElementById("all-yes");
 if (all) all.onclick = async () => {
   // Rows flagged "needs your review" are approved in bulk only with that filter on (the server enforces it too).
