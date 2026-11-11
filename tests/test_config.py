@@ -181,15 +181,3 @@ def test_coloring_dir_defaults_under_content_dir(tmp_path):
     assert Config.from_env({"COLORING_DIR": str(tmp_path / "pages")}).coloring_path == tmp_path / "pages"
     assert Config.from_env({"COLORING_DIR": "pages"}).coloring_path == ROOT / "pages"
 
-
-def test_kiosk_time_limit():
-    assert Config().kiosk_time_limit_s == 120
-    assert Config.from_env({}).kiosk_time_limit_s == 120
-    assert Config.from_env({"KIOSK_TIME_LIMIT_S": "0"}).kiosk_time_limit_s == 0
-    assert Config.from_env({"KIOSK_TIME_LIMIT_S": "45"}).kiosk_time_limit_s == 45
-
-
-@pytest.mark.parametrize("val", ["-1", "1.5", "abc", ""])
-def test_bad_kiosk_time_limit_raises(val):
-    with pytest.raises(ValueError, match="KIOSK_TIME_LIMIT_S"):
-        Config.from_env({"KIOSK_TIME_LIMIT_S": val})

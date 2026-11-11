@@ -100,6 +100,8 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         cloud.upload(s.token, original=s.photo)
 
     def on_dusty(s: Session, jpeg: bytes) -> None:
+        if s.deleted:  # guest deleted it (Delete, Start over, idle) while the transform ran: keep nothing
+            return  # (upload() and save_dusty() also skip deleted tokens, for a delete that lands mid-hook)
         try:  # a local-disk hiccup must not fail the guest's transform
             photos.save_dusty(s.token, jpeg)
             if s.choice == "album":
@@ -141,7 +143,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         c = st.content
         fb, pool = _served(c)
         qs = ([fb] if fb else []) + st.rng.sample(pool, min(cfg.quiz_random_count, len(pool)))
-        return jsonify(retention_days=RETENTION_DAYS, time_limit_s=cfg.kiosk_time_limit_s, questions=[{
+        return jsonify(retention_days=RETENTION_DAYS, questions=[{
             "id": q.id, "type": q.type, "prompt": q.prompt, "quip": q.quip,
             "options": [{"id": o.id, "text": o.text, "correct": o.correct, "first_burn": o.first_burn}
                         for o in q.options],

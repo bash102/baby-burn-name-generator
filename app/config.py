@@ -37,7 +37,6 @@ class Config:
     quiz_random_count: int = 4
     low_names_warning: int = 25
     session_ttl_s: int = 600
-    kiosk_time_limit_s: int = 120  # guest countdown from first tap to auto-finish; 0 = off
     photo_bucket: str = ""
     photo_base_url: str = ""  # trailing slash stripped by from_env
     album_secret: str = ""
@@ -76,7 +75,7 @@ class Config:
                     off_ok = name == "local_http_port"
                     if not (0 if off_ok else 1) <= value <= 65535:
                         raise ValueError(f"{var} must be {'0 (off) or ' if off_ok else ''}1-65535, got {raw!r}")
-                elif name in ("coloring_odds", "kiosk_time_limit_s"):
+                elif name == "coloring_odds":
                     if value < 0:
                         raise ValueError(f"{var} must be 0 (off) or a whole number >= 1, got {raw!r}")
                 elif not (math.isfinite(value) and value > 0):
