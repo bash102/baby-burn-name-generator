@@ -165,7 +165,7 @@ def test_usb_retry_succeeds_on_second_attempt(usb, img):
 
 def test_usb_gives_up_after_three_attempts_waiting_2_then_4_under_the_lock(usb, img):
     p, outcomes, calls, waits = usb
-    outcomes += [RuntimeError("usb gone"), {"did_print": False, "outcome": "error"}, ValueError("Device not found")]
+    outcomes += [ValueError("Device not found"), {"did_print": False, "outcome": "error"}, ValueError("Device not found")]
     with pytest.raises(PrintError, match="after 3 attempts"):
         p(img)
     assert calls == [True, True, True] and waits == [(2, True), (4, True)]
@@ -178,5 +178,14 @@ def test_usb_unconfirmed_print_is_not_retried(usb, img, outcome):
     p, outcomes, calls, waits = usb
     outcomes += [{"did_print": False, **({"outcome": outcome} if outcome else {})}]
     with pytest.raises(PrintError, match="did not confirm"):
+        p(img)
+    assert len(calls) == 1 and waits == []
+
+
+def test_usb_error_after_the_write_is_not_retried(usb, img):
+    """A USB error or timeout can come from the status read after the job was written: no retry, no duplicate."""
+    p, outcomes, calls, waits = usb
+    outcomes += [OSError("[Errno 110] Operation timed out")]
+    with pytest.raises(PrintError, match="timed out"):
         p(img)
     assert len(calls) == 1 and waits == []

@@ -28,7 +28,7 @@ def shift(img: Image.Image, dx: int, dy: int) -> Image.Image:
 class PrintError(Exception):
     def __init__(self, msg: str, retry: bool = False):
         super().__init__(msg)
-        self.retry = retry  # True only when nothing can have printed, so a retry can't make a duplicate
+        self.retry = retry  # True only when the job never reached the printer, so a retry can't make a duplicate
 
 
 def _file_printer(out_dir: Path) -> Callable[[Image.Image], None]:
@@ -49,10 +49,13 @@ def _usb_once(target: str, img: Image.Image) -> None:
         )
         result = send(instructions, printer_identifier=target, backend_identifier="pyusb")
     except Exception as e:
-        raise PrintError(f"printer error: {e}", retry=True) from e
+        # brother_ql's pyusb backend raises ValueError("Device not found") before writing anything. Any other
+        # error (a USB error or timeout) can come from the status read after the job was written, so it may
+        # have printed: not retried, an admin can reprint it.
+        raise PrintError(f"printer error: {e}", retry=str(e) == "Device not found") from e
     if not result.get("did_print"):
-        # "error": the printer reported a fault and printed nothing. Anything else ("sent", "unknown") may have
-        # printed without the status arriving in time, so it is not retried: an admin can reprint it.
+        # "error": the printer reported a fault. Anything else ("sent", "unknown") may have printed without
+        # the status arriving in time, so it is not retried.
         outcome = result.get("outcome", "unknown")
         raise PrintError(f"printer did not confirm print: {outcome}", retry=outcome == "error")
 
