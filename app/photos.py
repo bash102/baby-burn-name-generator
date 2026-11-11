@@ -173,11 +173,11 @@ def render_photo_page(token: str, *, state: Literal["temp", "album", "deleted"],
                       uploaded_at: datetime, retention_days: int = RETENTION_DAYS, album_url: str,
                       now: datetime | None = None) -> str:
     """Self-contained mobile page at p/<token>: deletion status first, then the images."""
-    album_link = f"<p><a href='{html.escape(album_url)}'>See the Baby Burn album</a></p>"
+    album_link = f"<p><a href='{html.escape(album_url)}'>See the Baby Burn Album</a></p>"
     if state == "deleted":
         return _doc("Baby Burn photo", f"<p class=status>This photo has been deleted.</p>{album_link}")
     if state == "album":
-        status, exp = "This photo is in the Baby Burn album and stays there.", None
+        status, exp = "This photo is in the Baby Burn Album and stays there.", None
         src = {k: urljoin(album_url, f"{token}/{k}.jpg") for k in IMAGES}
     else:
         exp = uploaded_at + timedelta(days=retention_days)
@@ -206,14 +206,16 @@ def render_album_page(entries: list[tuple[str, str]], base_url: str) -> str:
     figs = []
     for token, name in entries:
         d, o = (html.escape(f"{base_url}/{token}/{k}.jpg") for k in ("dusty", "original"))
-        figs.append(f"<figure><a href='{o}'><img src='{d}' alt='' loading=lazy "
-                    f"onerror=\"this.onerror=null;this.src='{o}'\"></a>"
-                    f"<figcaption>{html.escape(name)}</figcaption></figure>")
+        # tap: the full-size dusty baby; no dusty (never developed): picture and link fall back to the original
+        figs.append(f"<figure><a href='{d}'><img src='{d}' alt='{html.escape(name)}' loading=lazy "
+                    f"onerror=\"this.onerror=null;this.src='{o}';this.parentNode.href='{o}'\"></a>"
+                    f"<figcaption>{html.escape(name)} <a class=orig href='{o}'>Original</a></figcaption></figure>")
     grid = "".join(figs) or "<p class=note>No photos yet. Be the first!</p>"
     style = ("<style>.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}"
-             "figure{margin:0}figcaption{font-weight:700}</style>")
-    title = f"{EVENT_NAME} album"
-    return _doc(title, f"{style}<h1>{title}</h1><div class=grid>{grid}</div>")
+             "figure{margin:0}figcaption{font-weight:700}.orig{font-weight:400;font-size:.85em;padding:6px 4px}</style>")
+    note = "<p class=note>Tap a photo for the full-size dusty baby; press and hold it to save.</p>" if figs else ""
+    title = f"{EVENT_NAME} Album"
+    return _doc(title, f"{style}<h1>{title}</h1>{note}<div class=grid>{grid}</div>")
 
 
 # ---------- cloud ----------
@@ -281,6 +283,7 @@ class CloudPhotos:
         self._lock = threading.Lock()
         self._last: dict[str, Future] = {}
         self._st: dict[str, dict] = {}  # token -> {state, uploaded_at, original, dusty}
+        self._refresh_album()  # startup: a deploy that changes the album page's layout reaches the live page
 
     def url(self, token: str) -> str:
         return f"{self.base_url}/p/{token}"

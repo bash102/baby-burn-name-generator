@@ -23,7 +23,7 @@ const COPY = {
   takeHome: "Take it home",
   skip: "Skip",
   qrScan: days => `Scan to get your dusty baby photo (deletes ${days ? `in about ${days} days` : "after about two weeks"})`,
-  album: "Share to the Baby Burn album (keeps it)",
+  album: "Share to the Baby Burn Album (keeps it)",
   delete: "Delete my photo",
   done: "Done",
   thanks: "Thanks for burning with us!",
