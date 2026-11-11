@@ -43,8 +43,8 @@ def _st():
 @bp.context_processor
 def _limits():
     """The Add and Edit forms' maxlength values: the same caps the content validator enforces."""
-    return {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION, "max_quip": MAX_QUIP,
-            "max_prompt": MAX_PROMPT}
+    return {"limits": {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION,
+                       "max_quip": MAX_QUIP, "max_prompt": MAX_PROMPT}}
 
 
 @bp.before_request

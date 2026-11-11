@@ -398,7 +398,9 @@ def test_edit_invalid_is_400_and_writes_nothing(k):
                  {"kind": "names", "id": "dusty-bottom", "fields": {"tags": "dust"}},
                  {"kind": "names", "id": "nope", "fields": {"name": "Nope"}},
                  {"kind": "bogus", "id": "x", "fields": {}},
-                 {"kind": "names", "id": "dusty-bottom", "fields": ["name"]}):
+                 {"kind": "names", "id": "dusty-bottom", "fields": ["name"]},
+                 {"kind": "questions", "id": "margarita", "fields": {"options": [
+                     {"id": ["a"], "text": "x", "correct": True}, {"text": "y"}]}}):
         r = post(k, "/admin/edit", json=body)
         assert r.status_code == 400 and r.get_json()["error"], body
     r = post(k, "/admin/edit", json={"kind": "questions", "id": "first_burn",
@@ -427,7 +429,10 @@ def test_review_rows_have_edit(k, kind):
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
         assert "&#34;name&#34;: &#34;\\u003cscript\\u003ealert(1)\\u003c/script\\u003e&#34;" in html
     if kind == "questions":
-        assert 'maxlength' in html and '"max_prompt": 200' in html
+        assert 'maxlength="200"' in html and '"max_prompt": 200' in html
+        for label in ('"Question"', '"Type"', '"Answer "', '" correct"', '"tags"', '"Quip"'):
+            assert label in html, label  # visible labels in the edit form
+    assert 'className: "save"' in html and '"Escape"' in html
 
 
 @pytest.mark.parametrize("kind,caps", [("names", ["MAX_NAME"]), ("taglines", ["MAX_TAGLINE"]),

@@ -3,6 +3,7 @@
 import os
 import re
 import stat
+import string
 import sys
 import tempfile
 import threading
@@ -300,7 +301,7 @@ def append_entry(dir: Path, kind: Kind, entry: dict) -> Content:
         return _commit(dir, kind, raw)
 
 
-EDITABLE = {"names": {"name", "tags"}, "taglines": {"text"}, "questions": {"prompt", "type", "quip", "options"}}
+_EDITABLE = {"names": {"name", "tags"}, "taglines": {"text"}, "questions": {"prompt", "type", "quip", "options"}}
 _OPTION_KEYS = {"id", "text", "correct", "tags"}
 
 
@@ -313,20 +314,21 @@ def _str(where: str, v: Any) -> str:
 def _tag_list(where: str, v: Any) -> list[str]:
     if not isinstance(v, list) or not all(isinstance(t, str) for t in v):
         raise ContentError(f"{where}: tags must be a list of strings")
-    return [t.strip().lower() for t in v if t.strip()]
+    return list(dict.fromkeys(t.strip().lower() for t in v if t.strip()))  # deduped, order kept
 
 
 def _edit_options(where: str, old: list[dict], new: Any, fixed: bool) -> list[dict]:
     """The question's new option list: existing options keep their id and any other keys."""
-    if not isinstance(new, list) or not all(isinstance(o, dict) for o in new) or not 2 <= len(new) <= 4:
-        raise ContentError(f"{where}: options must be a list of 2-4 objects")
+    most = max(4, len(old))  # never force dropping options a question already has
+    if not isinstance(new, list) or not all(isinstance(o, dict) for o in new) or not 2 <= len(new) <= most:
+        raise ContentError(f"{where}: options must be a list of 2-{most} objects")
     by_id = {o.get("id"): o for o in old}
     given = [o.get("id") for o in new if "id" in o]
-    if len(given) != len(set(given)) or not set(given) <= by_id.keys():
+    if not all(isinstance(i, str) for i in given) or len(given) != len(set(given)) or not set(given) <= by_id.keys():
         raise ContentError(f"{where}: option ids must be existing, distinct ids of this question")
     if fixed and [o.get("id") for o in new] != [o.get("id") for o in old]:  # same count, ids and order
         raise ContentError(f"{where}: the first-burn question's options are fixed; only their text can change")
-    free = iter(s for s in "abcd" if s not in given)
+    free = iter(s for s in string.ascii_lowercase if s not in by_id)  # never reuse an old (maybe removed) id
     out = []
     for o in new:
         if bad := sorted(set(o) - _OPTION_KEYS):
@@ -356,7 +358,7 @@ def update_entry(dir: Path, kind: Kind, id: str, fields: dict) -> Content:
     if not isinstance(fields, dict):
         raise ContentError("fields must be an object")
     where = f"{kind}[{id}]"
-    if bad := sorted(set(fields) - EDITABLE[kind]):
+    if bad := sorted(set(fields) - _EDITABLE[kind]):
         raise ContentError(f"{where}: fields {bad} cannot be edited")
     with _LOCK:
         raw = _read_raw(dir)

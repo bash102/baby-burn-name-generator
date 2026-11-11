@@ -251,7 +251,7 @@ def _get(d, kind, id):
 def test_update_name(sample_content_dir):
     append_entry(sample_content_dir, "names", {**_name("u1", "Old Tot", status="draft"), "needs_owner": True,
                                                "note": "check"})
-    c = update_entry(sample_content_dir, "names", "u1", {"name": " New Tot ", "tags": ["Dust", " gnome ", ""]})
+    c = update_entry(sample_content_dir, "names", "u1", {"name": " New Tot ", "tags": ["Dust", " gnome ", "", "DUST", "dust"]})
     assert c == load_content(sample_content_dir)
     assert _get(sample_content_dir, "names", "u1") == {"id": "u1", "name": "New Tot", "tags": ["dust", "gnome"],
                                                        "status": "draft", "needs_owner": True, "note": "check"}
@@ -271,9 +271,38 @@ def test_update_question(sample_content_dir):
     q = _get(sample_content_dir, "questions", "margarita")
     assert q == {"id": "margarita", "type": "multi", "prompt": "Margarita?",
                  "options": [{"id": "a", "text": "Gatorade", "correct": True},
-                             {"id": "b", "text": "Dust", "correct": True, "tags": ["dust"]},
-                             {"id": "c", "text": "Ice"}],
-                 "status": "approved", "needs_owner": False}  # quip removed, other keys kept
+                             {"id": "c", "text": "Dust", "correct": True, "tags": ["dust"]},
+                             {"id": "d", "text": "Ice"}],
+                 "status": "approved", "needs_owner": False}  # quip removed, other keys kept; removed b not reused
+
+
+def test_update_new_option_ids_skip_old_ids(sample_content_dir):
+    qs = _read(sample_content_dir, "questions")
+    q = next(q for q in qs if q["id"] == "margarita")
+    q["options"] = [{"id": i, "text": i.upper(), "correct": i == "a"} for i in "abcd"]
+    _write(sample_content_dir, "questions", qs)
+    c = update_entry(sample_content_dir, "questions", "margarita", {"options": [
+        {"id": "a", "text": "A", "correct": True}, {"text": "New 1"}, {"text": "New 2"}]})
+    assert [o.id for o in next(q for q in c.questions if q.id == "margarita").options] == ["a", "e", "f"]
+
+
+def test_update_keeps_more_than_four_options(sample_content_dir):
+    qs = _read(sample_content_dir, "questions")
+    for q in qs:
+        if q["id"] in ("margarita", "first_burn"):
+            q["options"] += [{"id": f"x{i}", "text": f"Extra {i}"} for i in range(3)]
+    _write(sample_content_dir, "questions", qs)
+    for qid in ("margarita", "first_burn"):
+        opts = _get(sample_content_dir, "questions", qid)["options"]
+        assert len(opts) > 4
+        edited = [{"id": o["id"], "text": o["text"] + "!", "correct": bool(o.get("correct")), "tags": o.get("tags", [])}
+                  for o in opts]
+        update_entry(sample_content_dir, "questions", qid, {"options": edited})
+        assert _get(sample_content_dir, "questions", qid)["options"] == [{**o, "text": o["text"] + "!"} for o in opts]
+    five = [{"id": o["id"], "text": o["text"]} for o in _get(sample_content_dir, "questions", "margarita")["options"]]
+    five[0]["correct"] = True
+    with pytest.raises(ContentError, match="2-5"):  # margarita has 5 now: no sixth
+        update_entry(sample_content_dir, "questions", "margarita", {"options": five + [{"text": "six"}]})
 
 
 @pytest.mark.parametrize("kind,id,fields", [
@@ -290,6 +319,8 @@ def test_update_question(sample_content_dir):
     ("questions", "margarita", {"options": [{"id": "a", "text": "x", "correct": True}, {"text": "y", "first_burn": 1}]}),
     ("questions", "margarita", {"options": [{"id": "zz", "text": "x", "correct": True}, {"text": "y"}]}),
     ("questions", "margarita", {"options": [{"id": "a", "text": "x", "correct": "yes"}, {"text": "y"}]}),
+    ("questions", "margarita", {"options": [{"id": ["a"], "text": "x", "correct": True}, {"text": "y"}]}),
+    ("questions", "margarita", {"options": [{"id": {"a": 1}, "text": "x", "correct": True}, {"text": "y"}]}),
     ("names", "dusty-bottom", {"name": "x" * 41}),
     ("names", "dusty-bottom", {"name": "Captain " + sorted(BANNED_WORDS)[0]}),
     ("names", "dusty-bottom", {"name": "Toadstool Tot"}),  # duplicate name
