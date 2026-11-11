@@ -852,6 +852,22 @@ def test_quiz_payload_has_retention_days(tmp_path, sample_content_dir):
     assert k.c.get("/api/quiz").get_json()["retention_days"] == RETENTION_DAYS
 
 
+@pytest.mark.parametrize("limit", [120, 0])
+def test_quiz_payload_has_time_limit(tmp_path, sample_content_dir, limit):
+    k = Kiosk(tmp_path, sample_content_dir, kiosk_time_limit_s=limit)
+    assert k.c.get("/api/quiz").get_json()["time_limit_s"] == limit
+
+
+def test_kiosk_js_syntax():
+    import pathlib, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    js = pathlib.Path(__file__).resolve().parent.parent / "app" / "static" / "kiosk.js"
+    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
 def test_setup_r2_parses():
     import pathlib, subprocess
     root = pathlib.Path(__file__).resolve().parent.parent

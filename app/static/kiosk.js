@@ -34,13 +34,19 @@ const COPY = {
   tryAgain: "Try again",
   thanksSub: "Hydrate. Stay dusty.",
   error: "The dust got in the gears. Tap to start over.",
+  startOver: "Start over",
+  startOverQ: "Start over?",
+  yes: "Yes",
+  no: "No",
+  timeLeft: "Time left",
+  timeLow: "10 seconds left. You'll get a name either way!",
 };
 // Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
 const IDLE_MS = 20000, IDLE_LONG_MS = 45000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
 const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
-const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page
-const STUB_MODE = new URLSearchParams(location.search).get("stub");
+const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page; &limit=15 countdown seconds (0 = off)
+const QS = new URLSearchParams(location.search), STUB_MODE = QS.get("stub");
 
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -76,7 +82,7 @@ const STUB_QUIZ = { questions: [
   { id: "q3", type: "multi", prompt: "What belongs in your pack?", quip: "Always bring a spare dust mask.", options: [
     { id: "a", text: "Goggles", correct: true }, { id: "b", text: "Snacks", correct: true }, { id: "c", text: "A tuxedo", correct: false }] },
   { id: "q4", type: "single", prompt: "Where is the man?", quip: "Center. Always center.", options: [
-    { id: "a", text: "Center playa", correct: true }, { id: "b", text: "Reno", correct: false }] },
+    { id: "a", text: "Center playa", correct: true }, { id: "b", text: "Reno", correct: false }, { id: "c", text: "In your heart", correct: true }] },
 ] };
 let stubPolls = 0;
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
@@ -84,7 +90,7 @@ async function stubApi(path, opts) {
   await sleep(120);
   const m = opts.method || "GET";
   if (path === "/api/session") return json({ session_id: "stub1", has_photo: !!(opts.body && opts.body.get("photo")) });
-  if (path === "/api/quiz") return json(STUB_QUIZ);
+  if (path === "/api/quiz") return json({ ...STUB_QUIZ, time_limit_s: QS.has("limit") ? Number(QS.get("limit")) : 120 });
   if (path.endsWith("/finish")) return json({ name: "Sir Glitters-a-Lot", tagline: "Certified dust goblin", first_burn_label: "First Burn: Baby Burn 2", printed: !location.search.includes("jam"), coloring: location.search.includes("coloring"), photo_url: "https://example.invalid/p/stub" });
   if (path.endsWith("/qr.svg")) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><path d="M0 0h3v3H0zM5 0h3v3H5zM0 5h3v3H0zM4 4h1v1H4zM6 5h2v1H6zM5 7h3v1H5z"/></svg>', { headers: { "Content-Type": "image/svg+xml" } });
   if (path.endsWith("/photo-choice")) window.stubChoices = (window.stubChoices || []).concat(JSON.parse(opts.body).choice);   // every try
@@ -119,44 +125,93 @@ let stream = null;
 let epoch = 0;   // bumped on every screen change so stale async work is ignored
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 let idleMs = IDLE_MS;
-function show(...kids) { epoch++; idleMs = IDLE_MS; root.replaceChildren(...kids.filter(Boolean)); bumpIdle(); }
+function show(...kids) { epoch++; idleMs = IDLE_MS; root.replaceChildren(...kids.filter(Boolean)); again.hidden = false; bumpIdle(); }
 const longIdle = () => { idleMs = IDLE_LONG_MS; bumpIdle(); };
 let urls = [];   // object URLs for the current guest, revoked on reset
 const objUrl = blob => { const u = URL.createObjectURL(blob); urls.push(u); return u; };
 function newGuest() {
   urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
-  S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false }; }
+  // sessionP: the one POST /api/session per guest; finishing: finish() started; badge: reveal shown;
+  // deadline: countdown end (ms); autoWait: the time-limit finish is waiting on the server
+  S = { id: null, hasPhoto: false, snapshot: null, quiz: null, qi: 0, answers: [], onTakeHome: false,
+    sessionP: null, finishing: false, badge: false, deadline: 0, autoWait: false }; }
+
+// ---- Start over + countdown: live outside #screen, so show() keeps them ----
+let limitS = 0;   // KIOSK_TIME_LIMIT_S from /api/quiz; 0 = no countdown
+const again = h("div", { class: "again", hidden: "" });
+const clock = h("div", { class: "clock", role: "timer", "aria-label": COPY.timeLeft, hidden: "" });
+const live = h("div", { class: "sr", "aria-live": "polite" });   // announces the last 10 s once, not every tick
+document.body.append(again, clock, live);
+function againButton() {
+  again.replaceChildren(btn(COPY.startOver, () => again.replaceChildren(
+    h("span", {}, COPY.startOverQ), btn(COPY.yes, startOver, "yes"), btn(COPY.no, againButton, "skip"))));
+}
+function startOver() {
+  const s = S;
+  if (s.badge) { if (s.hasPhoto) choose("done"); }   // same as the Done/Skip path
+  else {   // drop the photo; never blocks or shows an error, even if the session is still being created
+    stopCamera();
+    if (s.sessionP) s.sessionP.then(() => { if (s.hasPhoto) choose("delete", s.id); }, () => {});
+  }
+  toStart();
+}
+let clockT;
+function startClock() {   // first tap after Start; later calls keep the same deadline
+  if (!limitS || S.deadline) return;
+  S.deadline = Date.now() + limitS * 1000; clock.hidden = false; tick();
+}
+function tick() {
+  const left = Math.max(0, Math.ceil((S.deadline - Date.now()) / 1000)), low = left <= 10;
+  clock.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  if (low && !clock.classList.contains("low")) live.textContent = COPY.timeLow;
+  clock.classList.toggle("low", low);
+  if (left === 0) return timeUp();
+  clockT = setTimeout(tick, 250);
+}
+const stopClock = () => clearTimeout(clockT);   // freezes the shown time
+function hideClock() { stopClock(); clock.hidden = true; clock.classList.remove("low"); live.textContent = ""; }
+// Time is up (camera or quiz): like "Just give me a name", skipping the photo if still on the camera.
+function timeUp() { stopCamera(); finish(true); }
 
 function toStart() {
   stopCamera(); newGuest();
   show(h("h1", {}, COPY.startTitle), h("p", {}, COPY.startSub),
     btn(COPY.startTitle, snapScreen, "big"), btn(COPY.startSkipPhoto, skipPhoto, "skip"));
+  again.hidden = true; againButton(); hideClock();
+  api("/api/quiz").then(r => r.json()).then(d => { limitS = d.time_limit_s || 0; }).catch(() => {});
 }
 
 // Idle: no touch for idleMs returns to Start (idle on the take-home screen counts as Done).
+// It waits while the time-limit finish is in progress, so that guest still gets their reveal.
 let idleT;
 function bumpIdle() { clearTimeout(idleT); idleT = setTimeout(idle, idleMs); }
-function idle() { if (S.onTakeHome) choose("done"); toStart(); }
+function idle() { if (S.autoWait) return bumpIdle(); if (S.onTakeHome) choose("done"); toStart(); }
 addEventListener("pointerdown", bumpIdle, true);
 
 // ---- Snap ----
-async function createSession(blob) {
-  const fd = new FormData();
-  if (blob) fd.append("photo", blob, "photo.jpg");
-  const res = await api("/api/session", { method: "POST", body: fd });
-  if (!res.ok) throw new Error("session " + res.status);
-  const j = await res.json();
-  S.id = j.session_id; S.hasPhoto = j.has_photo;
+// At most one session per guest: later calls (finish, a second tap) reuse the first. Results land on
+// that guest's state, never on the next guest's after a Start over or idle reset.
+function createSession(blob) {
+  const s = S;
+  return s.sessionP ||= (async () => {
+    const fd = new FormData();
+    if (blob) fd.append("photo", blob, "photo.jpg");
+    const res = await api("/api/session", { method: "POST", body: fd });
+    if (!res.ok) throw new Error("session " + res.status);
+    const j = await res.json();
+    s.id = j.session_id; s.hasPhoto = j.has_photo;
+  })();
 }
-function fail() { stopCamera(); show(h("h2", {}, COPY.error), btn("OK", toStart, "big")); }
+function fail() { stopCamera(); hideClock(); show(h("h2", {}, COPY.error), btn("OK", toStart, "big")); }
 async function skipPhoto(ev) {
   if (ev && ev.currentTarget) ev.currentTarget.disabled = true;   // one tap only: a second would make a second session
-  stopCamera(); const e = epoch;
+  startClock(); stopCamera(); const e = epoch;
   try { await createSession(null); } catch { return e === epoch ? fail() : null; }
   if (e === epoch) quizScreen();
 }
 
 async function snapScreen() {
+  startClock();
   const video = h("video", { autoplay: "", playsinline: "", muted: "" });
   const count = h("div", { class: "count" });
   const shutter = btn(COPY.snapShutter, () => countdown(video, count, shutter), "big");
@@ -191,7 +246,11 @@ async function countdown(video, count, shutter) {
 // ---- Quiz ----
 async function quizScreen() {
   if (!S.quiz) {
-    try { const r = await api("/api/quiz"); if (!r.ok) throw 0; const d = await r.json(); S.quiz = d.questions; S.retentionDays = d.retention_days; } catch { return finish(); }
+    const e = epoch;
+    let d;
+    try { const r = await api("/api/quiz"); if (!r.ok) throw 0; d = await r.json(); } catch { return e === epoch ? finish() : null; }
+    if (e !== epoch) return;
+    S.quiz = d.questions; S.retentionDays = d.retention_days;
   }
   if (S.qi >= S.quiz.length) return finish();
   const q = S.quiz[S.qi], picked = new Set();
@@ -220,7 +279,8 @@ function flash(q, picked) {
   const right = new Set(q.options.filter(o => o.correct).map(o => o.id));
   let kind = "meh", mark = "", label = COPY.noted;
   if (right.size) {
-    const ok = picked.size === right.size && [...picked].every(id => right.has(id));
+    // single: any one correct option counts; multi: exactly the correct set
+    const ok = q.type === "single" ? [...picked].some(id => right.has(id)) : picked.size === right.size && [...picked].every(id => right.has(id));
     kind = ok ? "ok" : "bad"; mark = ok ? "✓" : "✗"; label = ok ? COPY.right : COPY.wrong;
   }
   root.append(h("div", { class: "flash " + kind }, h("div", { class: "mark" }, mark), h("div", { class: "quip" }, label), h("div", { class: "quip" }, q.quip || "")));
@@ -229,17 +289,22 @@ function flash(q, picked) {
 }
 
 // ---- Reveal ----
-async function finish() {
+async function finish(auto) {   // auto === true: the countdown ran out (a click passes an event)
+  if (S.finishing) return;   // once per guest: button, failed quiz load and countdown can race
+  S.finishing = true; stopClock();
   show(h("h2", {}, COPY.revealing));
-  const e = epoch;
+  const e = epoch, s = S;
+  s.autoWait = auto === true;
   let r;
   try {
-    if (!S.id) await createSession(null);
-    const res = await postJSON(`/api/session/${S.id}/finish`, { answers: S.answers });
+    await createSession(null);   // reuses the snap/skip session if there is one
+    if (e !== epoch) return;
+    const res = await postJSON(`/api/session/${s.id}/finish`, { answers: s.answers });
     if (!res.ok) throw new Error("finish " + res.status);
     r = await res.json();
-  } catch { return e === epoch ? fail() : null; }
+  } catch { return e === epoch ? fail() : null; } finally { s.autoWait = false; }
   if (e !== epoch) return;
+  S.badge = true; hideClock();
   S.retentionDays = r.retention_days || S.retentionDays;
   const photo = h("div", { class: "photo" }, COPY.developing);
   show(h("div", { class: "reveal" },
@@ -283,8 +348,8 @@ async function pollPhoto(box, e) {
 }
 
 // ---- Take it home ----
-async function choose(choice) {
-  try { return (await postJSON(`/api/session/${S.id}/photo-choice`, { choice })).ok; } catch { return false; }
+async function choose(choice, id = S.id) {
+  try { return (await postJSON(`/api/session/${id}/photo-choice`, { choice })).ok; } catch { return false; }
 }
 async function applyChoice(choice, failedText) {
   show(h("h2", {}, choice === "delete" ? COPY.deleting : COPY.addingAlbum)); longIdle();   // tap feedback while the cloud confirms
@@ -309,7 +374,7 @@ function takeHomeScreen() {
   longIdle();
 }
 function thanks() {
-  show(h("h1", {}, COPY.thanks), h("p", {}, COPY.thanksSub));
+  show(h("h1", {}, COPY.thanks), h("p", {}, COPY.thanksSub)); again.hidden = true;
   const e = epoch;
   setTimeout(() => { if (e === epoch) toStart(); }, 3000);
 }

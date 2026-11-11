@@ -141,7 +141,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         c = st.content
         fb, pool = _served(c)
         qs = ([fb] if fb else []) + st.rng.sample(pool, min(cfg.quiz_random_count, len(pool)))
-        return jsonify(retention_days=RETENTION_DAYS, questions=[{
+        return jsonify(retention_days=RETENTION_DAYS, time_limit_s=cfg.kiosk_time_limit_s, questions=[{
             "id": q.id, "type": q.type, "prompt": q.prompt, "quip": q.quip,
             "options": [{"id": o.id, "text": o.text, "correct": o.correct, "first_burn": o.first_burn}
                         for o in q.options],

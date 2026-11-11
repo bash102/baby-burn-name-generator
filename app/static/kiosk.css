@@ -3,7 +3,7 @@
 html, body { margin:0; height:100%; overflow:hidden; touch-action: manipulation; user-select:none; -webkit-user-select:none; }
 body { font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink);
   background: linear-gradient(180deg, var(--night) 0%, var(--deep) 45%, var(--orange) 100%) fixed; }
-#screen { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; padding:28px 48px; text-align:center; position:relative; }
+#screen { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; padding:calc(env(safe-area-inset-top) + 92px) calc(env(safe-area-inset-right) + 48px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 48px); text-align:center; position:relative; }
 h1 { font-size:88px; line-height:1.05; margin:0; text-shadow:0 4px 0 rgba(0,0,0,.25); }
 h2 { font-size:50px; line-height:1.15; margin:0; max-width:1000px; }
 p, .small { font-size:30px; margin:0; max-width:900px; opacity:.95; }
@@ -41,3 +41,17 @@ img.dusty { filter: sepia(.7) contrast(1.15) saturate(.8); }
 .qr { width:min(40vh,380px); height:min(40vh,380px); background:#fff; padding:16px; border-radius:20px; }
 .reveal { display:flex; gap:48px; align-items:center; justify-content:center; }
 .reveal .txt { display:flex; flex-direction:column; gap:18px; align-items:center; }
+[hidden] { display:none !important; }
+/* Start over (top-left) and countdown (top-right) sit in the reserved top band of #screen */
+.again, .clock { position:fixed; top:calc(env(safe-area-inset-top) + 16px); z-index:10; }
+.again { left:calc(env(safe-area-inset-left) + 16px); display:flex; gap:12px; align-items:center;
+  font-size:28px; font-weight:700; }
+.again button { min-height:60px; padding:0 28px; border-radius:30px; font-size:26px; }
+.again button.yes { background:var(--bad); min-width:110px; }
+.again button.skip { min-width:110px; }
+.clock { right:calc(env(safe-area-inset-right) + 16px); min-height:60px; padding:0 24px; border-radius:30px;
+  display:flex; align-items:center; font-size:36px; font-weight:800; font-variant-numeric:tabular-nums; background:rgba(0,0,0,.35); }
+.clock.low { background:var(--bad); animation:pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { transform:scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .clock.low { animation:none; } }
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
