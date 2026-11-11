@@ -32,7 +32,7 @@ form.ed .f>label>span{flex:none;min-width:4.5em;font-size:13px;color:#5a4a3a}
 form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 </style></head><body>
 <header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
-<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a><a href="/admin/matching">Matching</a>
+<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a><a href="/admin/matching">Matching</a><a href="/admin/reprints">Reprint</a>
 <div id="flash" class="banner err" hidden></div></header>
 <main>
 {% if sample_banner %}<div class="banner err">{{ sample_banner }}</div>{% endif %}
@@ -65,9 +65,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 <h2>Printing</h2>
 <p><button data-post="/admin/test-print">Test print</button> <button data-post="/admin/test-coloring">Test coloring page</button>
 Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} guests, {% if coloring_pool %}{{ coloring_pool }} page{{ "s" if coloring_pool != 1 }} in pool{% else %}pool empty (inactive){% endif %}{% else %}off{% endif %}</p>
-<table>{% for bid, nid, display, tagline, fb, photo in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
-<td><button data-post="/admin/reprint" data-body='{{ {"id": bid}|tojson|forceescape }}'>Reprint</button></td></tr>
-{% else %}<tr><td>No badges printed yet.</td></tr>{% endfor %}</table>
+<p><a href="/admin/reprints">Reprint a badge</a> (search every badge since the last reset; failed prints listed first)</p>
 <h2>Tuning (last {{ tuning|length }} guests, cleared on restart)</h2>
 <table><tr><th>photo looks</th><th>answer words</th><th>tags</th><th>name (score)</th><th>next best</th></tr>
 {% for t in tuning %}<tr><td>{{ t.looks|join(", ") }}</td><td>{{ t.words|join(", ") }}</td><td>{{ t.tags|join(", ") }}</td>
@@ -95,6 +93,16 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <table><tr><th>time (UTC)</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
 {% for r in m.recent %}<tr><td>{{ r.ts[11:19] }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
 <td>{{ r.display }}</td><td>{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table>{% endif %}
+
+{% elif page == "reprints" %}
+<h1>Reprint a badge</h1>
+<form class="filters" method="get"><input name="q" value="{{ q }}" placeholder="name contains…" autofocus> <button>Search</button>
+{% if q %}<a href="/admin/reprints">clear</a>{% endif %} <b>{{ badges|length }}</b> shown</form>
+<table><tr><th>time (UTC)</th><th>name</th><th>tagline</th><th>printed?</th><th></th></tr>
+{% for b in badges %}<tr><td>{{ b.ts[11:19] }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
+<td>{% if b.printed %}yes{% else %}<span class="low">not printed</span>{% endif %}</td>
+<td><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button></td></tr>
+{% else %}<tr><td colspan="5">{{ "No badge name matches." if q else "No badges yet." }}</td></tr>{% endfor %}</table>
 
 {% else %}
 <h1>Review {{ kind }}</h1>

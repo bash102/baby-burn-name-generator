@@ -228,19 +228,44 @@ def test_reprint(k, tmp_path):
     k.state.printer = jammed
     k.finish(k.session())  # printing fails but the badge is recorded
     k.finish(k.session())
-    first, second = (b[0] for b in k.state.recent_badges)
+    second, first = (b["id"] for b in k.state.names.badges())  # newest first
     assert first != second
-    assert f'{{&#34;id&#34;: &#34;{first}&#34;}}' in k.c.get("/admin", headers=AUTH).data.decode()
+    assert f'{{&#34;id&#34;: &#34;{first}&#34;}}' in k.c.get("/admin/reprints", headers=AUTH).data.decode()
     assert post(k, "/admin/reprint", json={"id": first}).status_code == 502
+    assert k.state.names.badge(first)["printed"] == 0
     out = tmp_path / "reprints"
     k.state.printer = make_printer("file", out)
     assert post(k, "/admin/reprint", json={"id": first}).status_code == 200
     (png,) = out.glob("*.png")
     assert Image.open(png).size == (954, 672)
+    assert k.state.names.badge(first)["printed"] == 1
     for bad in ({"id": "nope"}, {"index": 0}, {}):
         r = post(k, "/admin/reprint", json=bad)
         assert r.status_code == 404 and r.get_json()["error"]
     assert post(k, "/admin/test-print").status_code == 200 and len(list(out.glob("*.png"))) == 2
+
+
+def test_reprint_is_pixel_identical(k, tmp_path):
+    out = tmp_path / "prints"
+    k.state.printer = make_printer("file", out)
+    k.finish(k.session())
+    (bid,) = (b["id"] for b in k.state.names.badges())
+    assert post(k, "/admin/reprint", json={"id": bid}).status_code == 200
+    a, b = sorted(out.glob("*.png"))
+    assert Image.open(a).tobytes() == Image.open(b).tobytes()
+
+
+def test_reprints_page_searches_and_flags_failed_first(k):
+    names = k.state.names
+    names.add_badge("ok1", "n1", "Dusty <b>Bob</b>", "<i>tag</i>", 3, None, True)
+    names.add_badge("bad1", "n2", "Sandy Sue", "t", None, None, False)
+    names.add_badge("ok2", "n3", "DUSTY Cal", "t", None, None, True)
+    page = k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    assert page.index("Sandy Sue") < page.index("DUSTY Cal") < page.index("Dusty &lt;b&gt;Bob")
+    assert "&lt;i&gt;tag&lt;/i&gt;" in page and "<b>Bob" not in page and "not printed" in page
+    page = k.c.get("/admin/reprints?q=dusty", headers=AUTH).data.decode()
+    assert "DUSTY Cal" in page and "Bob" in page and "Sandy Sue" not in page
+    assert 'href="/admin/reprints"' in k.c.get("/admin", headers=AUTH).data.decode()  # nav link
 
 
 def test_test_coloring_page(k, tmp_path, sample_content_dir):
@@ -366,7 +391,7 @@ def test_reprint_keeps_photo_qr(k, monkeypatch):
     real = admin.render_badge
     monkeypatch.setattr(admin, "render_badge", lambda *a, **kw: calls.append(kw) or real(*a, **kw))
     r = k.finish(k.session())
-    (bid,) = (b[0] for b in k.state.recent_badges)
+    (bid,) = (b["id"] for b in k.state.names.badges())
     assert post(k, "/admin/reprint", json={"id": bid}).status_code == 200
     assert calls[-1]["qr_url"] == r["photo_url"] and r["photo_url"]
 

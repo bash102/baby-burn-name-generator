@@ -36,7 +36,7 @@ def test_yes_resets_names_album_and_photos(tmp_path):
     assert b"No photos yet" in s3.objects["album/s3cr3t/index.html"]["Body"]
 
 
-def test_reset_clears_match_log(tmp_path):
+def test_reset_clears_match_log_and_badge_log(tmp_path):
     import random
 
     from app.names import NameStore
@@ -45,10 +45,12 @@ def test_reset_clears_match_log(tmp_path):
     (tmp_path / "names.sqlite3").unlink()
     s = NameStore(tmp_path / "names.sqlite3")
     s.pick(set(), random.Random(0))
-    assert len(s.match_rows()) == 1
+    s.add_badge("b1", "n1", "Dusty", "t", None, None, True)
+    assert len(s.match_rows()) == 1 and len(s.badges()) == 1
     s._db.close()  # the kiosk is stopped before a reset
     assert reset_event.run(cfg, s3, album, ask=lambda _: "yes", say=lambda _: None, running=list) is True
-    assert NameStore(tmp_path / "names.sqlite3").match_rows() == []
+    after = NameStore(tmp_path / "names.sqlite3")
+    assert after.match_rows() == [] and after.badges() == []
 
 
 def test_refuses_while_either_kiosk_unit_is_active(tmp_path):

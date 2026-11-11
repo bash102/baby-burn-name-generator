@@ -46,7 +46,6 @@ class AppState:
     photos: PhotoStore
     cloud: CloudPhotos
     content_error: str | None = None
-    recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (id, name_id, display, tagline, first_burn, photo_url)
     tuning: deque = field(default_factory=lambda: deque(maxlen=10))  # last guests' match inputs; memory only
     rng: random.Random = field(default_factory=random.SystemRandom)
 
@@ -286,7 +285,8 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     lines = st.content.approved_taglines
     tagline = st.rng.choice(lines).text if lines else ""
     photo_url = st.cloud.url(s.token) if s.token else None
-    img = render_badge(display, tagline, first_burn, qr_url=photo_url)
+    badge_id = uuid.uuid4().hex
+    img = render_badge(display, tagline, first_burn, qr_url=photo_url, rng=random.Random(badge_id))  # reprints match
     try:
         st.printer(img)
         printed = True
@@ -297,7 +297,10 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
     # so a kiosk retry never prints a second page.
     odds = st.cfg.coloring_odds
     coloring = printed and odds > 0 and st.rng.randrange(odds) == 0 and _print_coloring(st)
-    st.recent_badges.append((uuid.uuid4().hex, name_id, display, tagline, first_burn, photo_url))
+    try:  # reprint log only: a DB fault must not cost the guest their name
+        st.names.add_badge(badge_id, name_id, display, tagline, first_burn, photo_url, printed)
+    except Exception:
+        log.exception("badge log write failed for %s", display)
     s.name_id = name_id
     return {"name": display, "tagline": tagline,
             "first_burn_label": f"First Burn: Baby Burn {first_burn}" if first_burn is not None else None,

@@ -2,6 +2,7 @@ import html
 import io
 import random
 import re
+import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -149,7 +150,22 @@ def test_print_failure_keeps_name(tmp_path, sample_content_dir):
     k = Kiosk(tmp_path, sample_content_dir, printer=jammed)
     r = k.finish(k.session(photo=False))
     assert r["printed"] is False and r["name"]
-    assert k.state.recent_badges[-1][2] == r["name"]
+    (b,) = k.state.names.badges()
+    assert b["display"] == r["name"] and b["tagline"] == r["tagline"] and b["printed"] == 0
+
+
+def test_finish_logs_printed_badge_and_survives_a_log_failure(tmp_path, sample_content_dir, monkeypatch):
+    k = Kiosk(tmp_path, sample_content_dir)
+    r = k.finish(k.session())
+    (b,) = k.state.names.badges()
+    assert b["display"] == r["name"] and b["photo_url"] == r["photo_url"] and b["printed"] == 1
+
+    def broken(*a, **kw):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(k.state.names, "add_badge", broken)
+    r = k.finish(k.session())
+    assert r["name"] and r["printed"] is True
 
 
 class Boom(FakeProvider):
@@ -982,7 +998,7 @@ def test_coloring_print_failure_keeps_name(tmp_path, sample_content_dir):
     sid = k.session(photo=False)
     r = k.finish(sid)
     assert r["printed"] is True and r["coloring"] is False and r["name"]
-    assert k.state.recent_badges[-1][2] == r["name"]
+    assert k.state.names.badges()[0]["display"] == r["name"]
     assert k.finish(sid) == r and p.calls == 2
 
 

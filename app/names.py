@@ -19,6 +19,8 @@ PHOTO_WEIGHT, ANSWER_CAP, TAG_CAP = 4, 2, 1
 # One row per badge for event-wide tuning. Words and scores only: never the photo, its token/URL or a session id.
 MATCH_LOG_COLS = ("ts", "photo_state", "looks", "answer_words", "tags", "name_id", "display", "score",
                   "photo_pts", "answer_pts", "tag_pts", "decided_by", "top3")
+# One row per badge handed out (failed prints too), for reprints. ts is UTC ISO; printed is 0/1.
+BADGE_COLS = ("id", "ts", "name_id", "display", "tagline", "first_burn", "photo_url", "printed")
 
 
 def points(n, looks, words, tags) -> tuple[int, int, int]:
@@ -37,6 +39,10 @@ class NameStore:
             "name_id TEXT PRIMARY KEY, display TEXT NOT NULL, given_at TEXT NOT NULL)"
         )
         self._db.execute(f"CREATE TABLE IF NOT EXISTS match_log ({', '.join(MATCH_LOG_COLS)})")
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS badges (id TEXT PRIMARY KEY, ts TEXT NOT NULL, name_id TEXT NOT NULL, "
+            "display TEXT NOT NULL, tagline TEXT NOT NULL, first_burn INTEGER, photo_url TEXT, printed INTEGER NOT NULL)"
+        )
         self._db.commit()
         self._lock = threading.Lock()
         self._pool: list = []
@@ -95,6 +101,31 @@ class NameStore:
         with self._lock:
             cur = self._db.execute(f"SELECT {', '.join(MATCH_LOG_COLS)} FROM match_log ORDER BY rowid")
             return [dict(zip(MATCH_LOG_COLS, r)) for r in cur]
+
+    def add_badge(self, id_: str, name_id: str, display: str, tagline: str, first_burn: int | None,
+                  photo_url: str | None, printed: bool) -> None:
+        """Remember a badge (printed or not) so the admin can reprint it, across restarts."""
+        with self._lock, self._db:
+            self._db.execute(f"INSERT INTO badges({', '.join(BADGE_COLS)}) VALUES ({', '.join('?' * len(BADGE_COLS))})",
+                             (id_, datetime.now(timezone.utc).isoformat(), name_id, display, tagline, first_burn,
+                              photo_url, int(printed)))
+
+    def badges(self, q: str = "") -> list[dict]:
+        """Badges whose name contains q (any case), failed prints first, then newest first."""
+        # ponytail: full scan filtered in Python (casefold handles non-ASCII); fine for the hundreds a party makes.
+        with self._lock:
+            rows = self._db.execute(f"SELECT {', '.join(BADGE_COLS)} FROM badges ORDER BY printed, rowid DESC").fetchall()
+        q = q.strip().casefold()
+        return [dict(zip(BADGE_COLS, r)) for r in rows if q in r[3].casefold()]
+
+    def badge(self, id_: str) -> dict | None:
+        with self._lock:
+            r = self._db.execute(f"SELECT {', '.join(BADGE_COLS)} FROM badges WHERE id = ?", (id_,)).fetchone()
+        return dict(zip(BADGE_COLS, r)) if r else None
+
+    def mark_printed(self, id_: str) -> None:
+        with self._lock, self._db:
+            self._db.execute("UPDATE badges SET printed = 1 WHERE id = ?", (id_,))
 
     def remaining(self) -> int:
         with self._lock:

@@ -93,3 +93,21 @@ def test_set_pool_rejects_stranger_ids(tmp_path):
     s = NameStore(tmp_path / "n.sqlite3")
     with pytest.raises(ValueError, match="stranger-"):
         s.set_pool([N("stranger-1", "X", frozenset())])
+
+
+def test_badge_log_search_order_and_mark_printed(tmp_path):
+    s = NameStore(tmp_path / "n.sqlite3")
+    s.add_badge("a1", "n1", "Dusty Ånka", "t1", 3, "https://x/p", True)
+    s.add_badge("b2", "n2", "Sandy Bob", "t2", None, None, False)
+    s.add_badge("c3", "n3", "dusty Cal", "t3", None, None, True)
+    assert [b["id"] for b in s.badges()] == ["b2", "c3", "a1"]  # failed first, then newest first
+    assert [b["id"] for b in s.badges("DUSTY")] == ["c3", "a1"]
+    assert [b["id"] for b in s.badges("ånka")] == ["a1"]
+    b = s.badge("a1")
+    assert (b["display"], b["tagline"], b["first_burn"], b["photo_url"], b["printed"]) == ("Dusty Ånka", "t1", 3, "https://x/p", 1)
+    assert b["ts"].endswith("+00:00")
+    assert s.badge("nope") is None
+    s.mark_printed("b2")
+    assert s.badge("b2")["printed"] == 1
+    s._db.close()
+    assert NameStore(tmp_path / "n.sqlite3").badge("b2")["display"] == "Sandy Bob"  # survives a restart

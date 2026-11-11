@@ -33,6 +33,7 @@ def test_usb_failure_raises_printerror(monkeypatch, tmp_path, img, result):
         return result
 
     monkeypatch.setattr(printer, "send", fake_send)
+    monkeypatch.setattr(printer, "sleep", lambda s: None)
     with pytest.raises(PrintError):
         make_printer("usb://0x04f9:0x209b", tmp_path)(img)
 
@@ -135,3 +136,37 @@ def test_test_print_coloring_empty_pool_errors(monkeypatch, tmp_path):
     monkeypatch.setattr(test_print, "make_printer", lambda t, d, off: lambda img: pytest.fail("printed"))
     with pytest.raises(SystemExit, match="no readable coloring page"):
         test_print.main(["x", "file", "--coloring"])
+
+
+@pytest.fixture
+def usb(monkeypatch, tmp_path):
+    """A USB printer whose send() plays back `outcomes` (an exception or a result dict); waits are recorded."""
+    waits, calls, outcomes = [], [], []
+    monkeypatch.setattr(printer, "convert", lambda *a, **k: b"data")
+    monkeypatch.setattr(printer, "sleep", lambda s: waits.append((s, printer._lock.locked())))
+
+    def fake_send(*a, **k):
+        calls.append(printer._lock.locked())
+        r = outcomes.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    monkeypatch.setattr(printer, "send", fake_send)
+    return make_printer("usb://0x04f9:0x209b", tmp_path), outcomes, calls, waits
+
+
+def test_usb_retry_succeeds_on_second_attempt(usb, img):
+    p, outcomes, calls, waits = usb
+    outcomes += [ValueError("Device not found"), {"did_print": True}]
+    p(img)
+    assert len(calls) == 2 and waits == [(2, True)]
+
+
+def test_usb_gives_up_after_three_attempts_waiting_2_then_4_under_the_lock(usb, img):
+    p, outcomes, calls, waits = usb
+    outcomes += [RuntimeError("usb gone"), {"did_print": False, "outcome": "error"}, ValueError("Device not found")]
+    with pytest.raises(PrintError, match="after 3 attempts"):
+        p(img)
+    assert calls == [True, True, True] and waits == [(2, True), (4, True)]
+    assert not printer._lock.locked()
