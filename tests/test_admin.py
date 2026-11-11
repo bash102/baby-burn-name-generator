@@ -362,6 +362,74 @@ def test_reprint_keeps_photo_qr(k, monkeypatch):
     assert calls[-1]["qr_url"] == r["photo_url"] and r["photo_url"]
 
 
+def test_edit_installs_without_reload_and_kiosk_serves_it(k, monkeypatch):
+    monkeypatch.setattr(k.state, "reload_content", lambda: pytest.fail("reload_content called"))
+    old = preview_key("Dusty Bottom")
+    r = post(k, "/admin/edit", json={"kind": "names", "id": "dusty-bottom",
+                                     "fields": {"name": "Dusty Tush", "tags": ["Dust", "gnome"]}})
+    row = r.get_json()["row"]
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert row == {"name": "Dusty Tush", "tags": ["dust", "gnome"], "key": preview_key("Dusty Tush")} and row["key"] != old
+    assert k.state.content == load_content(k.cfg.content_dir)
+    k.state.names.set_pool([n for n in k.state.names._pool if n.id == "dusty-bottom"])
+    assert k.state.names.pick(set(), k.state.rng) == ("dusty-bottom", "Dusty Tush")
+
+    r = post(k, "/admin/edit", json={"kind": "questions", "id": "margarita", "fields": {
+        "prompt": "Playa margarita?", "quip": "", "options": [{"id": "a", "text": "Gatorade", "correct": True},
+                                                              {"id": "b", "text": "Tequila"}]}})
+    assert r.status_code == 200 and r.get_json()["row"]["prompt"] == "Playa margarita?"
+    r = post(k, "/admin/edit", json={"kind": "questions", "id": "first_burn", "fields": {"prompt": "First one?"}})
+    assert r.status_code == 200
+    k.state.rng.sample = lambda pop, n: [q for q in pop if q.id == "margarita"]
+    qs = k.c.get("/api/quiz").get_json()["questions"]
+    assert [q["prompt"] for q in qs] == ["First one?", "Playa margarita?"]
+    assert [o["text"] for o in qs[1]["options"]] == ["Gatorade", "Tequila"] and qs[1]["quip"] == ""
+
+    post(k, "/admin/edit", json={"kind": "taglines", "id": "tiny-burner", "fields": {"text": "Tiny, dusty"}})
+    assert "Tiny, dusty" in {t.text for t in k.state.content.approved_taglines}
+
+
+def test_edit_invalid_is_400_and_writes_nothing(k):
+    path = k.cfg.content_dir / "names.yaml"
+    before = path.read_bytes()
+    for body in ({"kind": "names", "id": "dusty-bottom", "fields": {"name": "x" * 41}},
+                 {"kind": "names", "id": "dusty-bottom", "fields": {"name": "Captain Cocaine"}},
+                 {"kind": "names", "id": "dusty-bottom", "fields": {"status": "rejected"}},
+                 {"kind": "names", "id": "dusty-bottom", "fields": {"tags": "dust"}},
+                 {"kind": "names", "id": "nope", "fields": {"name": "Nope"}},
+                 {"kind": "bogus", "id": "x", "fields": {}},
+                 {"kind": "names", "id": "dusty-bottom", "fields": ["name"]}):
+        r = post(k, "/admin/edit", json=body)
+        assert r.status_code == 400 and r.get_json()["error"], body
+    r = post(k, "/admin/edit", json={"kind": "questions", "id": "first_burn",
+                                     "fields": {"options": [{"id": "bb1", "text": "x"}, {"id": "bb2", "text": "y"}]}})
+    assert r.status_code == 400 and "fixed" in r.get_json()["error"]
+    assert path.read_bytes() == before
+
+
+def test_edit_guarded(k):
+    body = {"kind": "names", "id": "d1", "fields": {"name": "Hacked"}}
+    assert k.c.post("/admin/edit", headers={"Origin": "http://localhost"}, json=body).status_code == 401
+    assert k.c.post("/admin/edit", headers={**AUTH, "Origin": "http://evil.example"}, json=body).status_code == 403
+    assert not any(n.name == "Hacked" for n in load_content(k.cfg.content_dir).names)
+
+
+@pytest.mark.parametrize("kind", ["names", "questions", "taglines"])
+def test_review_rows_have_edit(k, kind):
+    if kind == "names":
+        append_entry(k.cfg.content_dir, "names", draft("xss", "<script>alert(1)</script>"))
+        k.state.reload_content()
+    html = k.c.get(f"/admin/review?kind={kind}&status=", headers=AUTH).data.decode()
+    rows = html.count('class="row ')
+    assert rows and html.count('class="edit"') == rows and html.count("data-edit=") == rows
+    assert "<script>alert" not in html
+    if kind == "names":
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+        assert "&#34;name&#34;: &#34;\\u003cscript\\u003ealert(1)\\u003c/script\\u003e&#34;" in html
+    if kind == "questions":
+        assert 'maxlength' in html and '"max_prompt": 200' in html
+
+
 @pytest.mark.parametrize("kind,caps", [("names", ["MAX_NAME"]), ("taglines", ["MAX_TAGLINE"]),
                                        ("questions", ["MAX_OPTION", "MAX_QUIP"])])
 def test_add_form_maxlength_matches_content_caps(k, kind, caps):

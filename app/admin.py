@@ -20,8 +20,8 @@ from app import badge
 from app.badge import render_badge
 from app.coloring import page_files, pick_page
 from app.config import PROVIDERS
-from app.content import (KINDS, MAX_NAME, MAX_OPTION, MAX_QUIP, MAX_TAGLINE, STATUSES, ContentError, append_entry,
-                         set_status)
+from app.content import (KINDS, MAX_NAME, MAX_OPTION, MAX_PROMPT, MAX_QUIP, MAX_TAGLINE, STATUSES, ContentError,
+                         append_entry, set_status, update_entry)
 from app.transform import get_provider
 
 log = logging.getLogger(__name__)
@@ -42,8 +42,9 @@ def _st():
 
 @bp.context_processor
 def _limits():
-    """The Add form's maxlength values: the same caps the content validator enforces."""
-    return {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION, "max_quip": MAX_QUIP}
+    """The Add and Edit forms' maxlength values: the same caps the content validator enforces."""
+    return {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION, "max_quip": MAX_QUIP,
+            "max_prompt": MAX_PROMPT}
 
 
 @bp.before_request
@@ -195,7 +196,28 @@ def review():
         "admin.html", page="review", st=st, kind=kind, status=status, tag=tag, rows=rows,
         all_tags=sorted({t for n in st.content.names for t in n.tags}), statuses=sorted(STATUSES),
         needs_owner=bool(a.get("needs_owner")), msg=a.get("msg"),
-        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, preview_key=preview_key)
+        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, preview_key=preview_key, edit_data=edit_data)
+
+
+def edit_data(kind: str, r) -> dict:
+    """A review row's editable values: the Edit form's prefill, and /admin/edit's reply for repainting the row."""
+    if kind == "names":
+        return {"name": r.name, "tags": sorted(r.tags), "key": preview_key(r.name)}
+    if kind == "taglines":
+        return {"text": r.text}
+    return {"prompt": r.prompt, "type": r.type, "quip": r.quip, "fixed": bool(r.fixed),
+            "options": [{"id": o.id, "text": o.text, "correct": o.correct, "tags": sorted(o.tags)} for o in r.options]}
+
+
+@bp.post("/edit")
+def edit():
+    d, st = _body(), _st()
+    kind, id_ = d.get("kind"), d.get("id")
+    err = _write(lambda: update_entry(st.cfg.content_dir, kind, id_, d.get("fields")))
+    if err:
+        return jsonify(error=err), 400
+    row = next(r for r in getattr(st.content, kind) if r.id == id_)
+    return jsonify(ok=True, row=edit_data(kind, row))
 
 
 @bp.post("/status")

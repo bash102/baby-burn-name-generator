@@ -22,6 +22,8 @@ button.yes{background:#2e7d32;color:#fff;border-color:#2e7d32}button.no{backgrou
 .note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:#2e7d32}
 form.filters,details{margin:10px 0}form.filters>*{margin-right:10px}
 input,select,textarea{font:inherit;padding:4px}
+#flash{position:sticky;top:44px;z-index:2}
+form.ed{margin-top:8px}form.ed p{margin:6px 0}form.ed input:not([type=checkbox]){width:100%;box-sizing:border-box}
 </style></head><body>
 <header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
 <a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a></header>
@@ -72,19 +74,19 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <button type="button" id="all-yes">Approve all visible</button></form>
 
 {% for r in rows %}
-<div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}">
+<div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}" data-edit='{{ edit_data(kind, r)|tojson|forceescape }}'>
 {% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}">{% endif %}
 <div class="body">
-{% if kind == "names" %}<b>{{ r.name }}</b> {% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}
-{% elif kind == "taglines" %}<b>{{ r.text }}</b>
-{% else %}<b>{{ r.prompt }}</b> ({{ r.type }}){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
-<ul>{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
+{% if kind == "names" %}<b class="t">{{ r.name }}</b> <span class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>
+{% elif kind == "taglines" %}<b class="t">{{ r.text }}</b>
+{% else %}<b class="t">{{ r.prompt }}</b> (<span class="ty">{{ r.type }}</span>){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
+<ul class="opts">{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
 {% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}</li>{% endfor %}</ul>
-{% if r.quip %}<div>Quip: <i>{{ r.quip }}</i></div>{% endif %}{% endif %}
+<div class="quip" {{ "hidden" if not r.quip }}>Quip: <i>{{ r.quip }}</i></div>{% endif %}
 {% if r.needs_owner %}<div class="note">Needs your review{% if r.note %}: {{ r.note }}{% endif %}</div>
 {% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}
 <small class="st">{{ r.status }}</small></div>
-<div class="acts"><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
+<div class="acts"><button type="button" class="edit">Edit</button><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
 </div>
 {% else %}<p>Nothing matches these filters.</p>{% endfor %}
 
@@ -105,7 +107,8 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <script>
 const flash = (m, ok) => { const f = document.getElementById("flash"); f.textContent = m; f.hidden = !m; f.className = "banner " + (ok ? "ok" : "err"); };
 const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
-  body: JSON.stringify(body || {})}).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status); });
+  body: JSON.stringify(body || {})}).then(async r => {
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; });
 document.querySelectorAll("[data-post]").forEach(b => b.onclick = () =>
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
@@ -119,8 +122,71 @@ function shown(row, s) {
 }
 const setStatus = (row, s) => post("/admin/status", {kind, id: row.dataset.id, status: s}).then(() => shown(row, s));
 const count = () => { const c = document.getElementById("count"); if (c) c.textContent = document.querySelectorAll(".row:not(.gone)").length; };
-document.querySelectorAll(".row .acts button").forEach(b => b.onclick = () =>
+document.querySelectorAll(".row .acts button[data-s]").forEach(b => b.onclick = () =>
   setStatus(b.closest(".row"), b.dataset.s).then(() => flash("")).catch(e => flash("Failed: " + e.message)));
+// In-place edit: the form is built from the row's data-edit JSON; user text only goes in via value/textContent.
+const LIM = {{ {"max_name": max_name, "max_tagline": max_tagline, "max_option": max_option, "max_quip": max_quip, "max_prompt": max_prompt}|tojson }};
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const field = (name, value, max, placeholder) => { const i = el("input", {name, value: value || "", placeholder}); if (max) i.maxLength = max; return i; };
+const tagList = s => s.split(",").map(t => t.trim()).filter(Boolean);
+const tagSpans = ts => ts.map(t => el("span", {className: "tag", textContent: t}));
+function paint(row, d) {
+  row.dataset.edit = JSON.stringify(d);
+  const t = row.querySelector(".t");
+  if (kind === "names") {
+    t.textContent = d.name; row.querySelector(".tags").replaceChildren(...tagSpans(d.tags));
+    row.querySelector("img").src = "/admin/preview/" + encodeURIComponent(row.dataset.id) + ".png?v=" + d.key;
+  } else if (kind === "taglines") t.textContent = d.text;
+  else {
+    t.textContent = d.prompt; row.querySelector(".ty").textContent = d.type;
+    row.querySelector(".opts").replaceChildren(...d.options.map(o => el("li", {className: o.correct ? "correct" : ""},
+      o.text + (o.correct ? " (correct) " : " "), ...tagSpans(o.tags))));
+    const q = row.querySelector(".quip"); q.hidden = !d.quip; q.querySelector("i").textContent = d.quip;
+  }
+}
+function fields(f, d) {
+  const v = n => f.elements[n].value;
+  if (kind === "names") return {name: v("name"), tags: tagList(v("tags"))};
+  if (kind === "taglines") return {text: v("text")};
+  const out = {prompt: v("prompt"), quip: v("quip")};
+  if (!d.fixed) out.type = v("type");
+  out.options = [...f.querySelectorAll(".opt")].map((p, i) => {
+    const o = {text: v("opt" + i)};
+    if (p.dataset.id) o.id = p.dataset.id;
+    if (!d.fixed) { o.correct = f.elements["correct" + i].checked; o.tags = tagList(v("tags" + i)); }
+    return o;
+  }).filter(o => d.fixed || o.text.trim());  // a blank row drops that option
+  return out;
+}
+function openEdit(row) {
+  if (row.querySelector("form.ed")) return;
+  const d = JSON.parse(row.dataset.edit), f = el("form", {className: "ed"}), p = (...k) => el("p", {}, ...k);
+  if (kind === "names") f.append(p(field("name", d.name, LIM.max_name, "Name")), p(field("tags", d.tags.join(", "), 0, "tags, comma separated")));
+  else if (kind === "taglines") f.append(p(field("text", d.text, LIM.max_tagline, "Tagline")));
+  else {
+    const type = el("select", {name: "type", disabled: d.fixed}, el("option", {}, "single"), el("option", {}, "multi"));
+    type.value = d.type;
+    f.append(p(field("prompt", d.prompt, LIM.max_prompt, "Question")), p(type));
+    const opts = d.fixed ? d.options : [0, 1, 2, 3].map(i => d.options[i] || {text: "", correct: false, tags: []});
+    opts.forEach((o, i) => {
+      const r = el("p", {className: "opt"}, field("opt" + i, o.text, LIM.max_option, "Option text"));
+      if (o.id) r.dataset.id = o.id;
+      if (!d.fixed) r.append(el("label", {}, el("input", {type: "checkbox", name: "correct" + i, checked: o.correct}), " correct"),
+                             field("tags" + i, o.tags.join(", "), 0, "tags"));
+      f.append(r);
+    });
+    f.append(p(field("quip", d.quip, LIM.max_quip, "Quip (optional)")));
+  }
+  f.append(el("button", {className: "yes"}, "Save"), " ", el("button", {type: "button", onclick: () => f.remove()}, "Cancel"));
+  f.onsubmit = e => {
+    e.preventDefault();
+    post("/admin/edit", {kind, id: row.dataset.id, fields: fields(f, d)})
+      .then(j => { paint(row, j.row); f.remove(); flash("Saved.", true); }).catch(e => flash("Failed: " + e.message));
+  };
+  row.querySelector(".body").append(f);
+  f.elements[0].focus();
+}
+document.querySelectorAll(".row .edit").forEach(b => b.onclick = () => openEdit(b.closest(".row")));
 const all = document.getElementById("all-yes");
 if (all) all.onclick = async () => {
   // Rows flagged "needs your review" are approved in bulk only with that filter on (the server enforces it too).

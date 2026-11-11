@@ -1,7 +1,8 @@
 import pytest
 import yaml
 
-from app.content import BANNED_WORDS, MAX_OPTION, MAX_QUIP, ContentError, append_entry, load_content, main, set_status
+from app.content import (BANNED_WORDS, MAX_OPTION, MAX_QUIP, ContentError, append_entry, load_content, main, set_status,
+                         update_entry)
 
 
 def _read(d, kind):
@@ -241,3 +242,89 @@ def test_single_question_has_at_most_one_correct_option(sample_content_dir):
     _write(sample_content_dir, "questions", qs)
     with pytest.raises(ContentError, match="exactly one correct"):
         load_content(sample_content_dir)
+
+
+def _get(d, kind, id):
+    return next(r for r in _read(d, kind) if r["id"] == id)
+
+
+def test_update_name(sample_content_dir):
+    append_entry(sample_content_dir, "names", {**_name("u1", "Old Tot", status="draft"), "needs_owner": True,
+                                               "note": "check"})
+    c = update_entry(sample_content_dir, "names", "u1", {"name": " New Tot ", "tags": ["Dust", " gnome ", ""]})
+    assert c == load_content(sample_content_dir)
+    assert _get(sample_content_dir, "names", "u1") == {"id": "u1", "name": "New Tot", "tags": ["dust", "gnome"],
+                                                       "status": "draft", "needs_owner": True, "note": "check"}
+
+
+def test_update_tagline(sample_content_dir):
+    c = update_entry(sample_content_dir, "taglines", "tiny-burner", {"text": "Tiny burner, huge dust"})
+    assert next(t for t in c.taglines if t.id == "tiny-burner").text == "Tiny burner, huge dust"
+    assert _get(sample_content_dir, "taglines", "tiny-burner")["status"] == "approved"
+
+
+def test_update_question(sample_content_dir):
+    update_entry(sample_content_dir, "questions", "margarita", {
+        "prompt": "Margarita?", "type": "multi", "quip": "",
+        "options": [{"id": "a", "text": "Gatorade", "correct": True},
+                    {"text": "Dust", "correct": True, "tags": ["Dust"]}, {"text": "Ice"}]})
+    q = _get(sample_content_dir, "questions", "margarita")
+    assert q == {"id": "margarita", "type": "multi", "prompt": "Margarita?",
+                 "options": [{"id": "a", "text": "Gatorade", "correct": True},
+                             {"id": "b", "text": "Dust", "correct": True, "tags": ["dust"]},
+                             {"id": "c", "text": "Ice"}],
+                 "status": "approved", "needs_owner": False}  # quip removed, other keys kept
+
+
+@pytest.mark.parametrize("kind,id,fields", [
+    ("names", "dusty-bottom", {"status": "draft"}),
+    ("names", "dusty-bottom", {"id": "other"}),
+    ("names", "dusty-bottom", {"note": "hi"}),
+    ("names", "dusty-bottom", {"name": 5}),
+    ("names", "dusty-bottom", {"tags": "dust"}),
+    ("names", "nope", {"name": "X"}),
+    ("taglines", "tiny-burner", {"name": "X"}),
+    ("questions", "margarita", {"type": "essay"}),
+    ("questions", "margarita", {"options": [{"id": "a", "text": "x", "correct": True}]}),
+    ("questions", "margarita", {"options": [{"text": str(i), "correct": i == 0} for i in range(5)]}),
+    ("questions", "margarita", {"options": [{"id": "a", "text": "x", "correct": True}, {"text": "y", "first_burn": 1}]}),
+    ("questions", "margarita", {"options": [{"id": "zz", "text": "x", "correct": True}, {"text": "y"}]}),
+    ("questions", "margarita", {"options": [{"id": "a", "text": "x", "correct": "yes"}, {"text": "y"}]}),
+    ("names", "dusty-bottom", {"name": "x" * 41}),
+    ("names", "dusty-bottom", {"name": "Captain " + sorted(BANNED_WORDS)[0]}),
+    ("names", "dusty-bottom", {"name": "Toadstool Tot"}),  # duplicate name
+    ("taglines", "tiny-burner", {"text": "x" * 33}),
+    ("questions", "margarita", {"quip": "x" * (MAX_QUIP + 1)}),
+])
+def test_update_rejected_writes_nothing(sample_content_dir, kind, id, fields):
+    before = {k: (sample_content_dir / f"{k}.yaml").read_bytes() for k in ("names", "questions", "taglines")}
+    with pytest.raises(ContentError):
+        update_entry(sample_content_dir, kind, id, fields)
+    assert before == {k: (sample_content_dir / f"{k}.yaml").read_bytes() for k in before}
+
+
+def test_update_first_burn_text_only(sample_content_dir):
+    opts = _get(sample_content_dir, "questions", "first_burn")["options"]
+    update_entry(sample_content_dir, "questions", "first_burn", {
+        "prompt": "Your first Baby Burn?", "quip": "Welcome home.", "type": "single",
+        "options": [{"id": o["id"], "text": o["text"] + "!", "correct": False, "tags": []} for o in opts]})
+    q = _get(sample_content_dir, "questions", "first_burn")
+    assert q["prompt"] == "Your first Baby Burn?" and q["quip"] == "Welcome home." and q["fixed"] == "first_burn"
+    assert q["options"] == [{**o, "text": o["text"] + "!"} for o in opts]
+
+
+@pytest.mark.parametrize("change", [
+    lambda o: {"options": [{"id": x["id"], "text": x["text"]} for x in o[:2]]},  # fewer options
+    lambda o: {"options": [{"id": x["id"], "text": x["text"]} for x in o] + [{"text": "BB4"}]},
+    lambda o: {"options": [{"id": "z" + x["id"], "text": x["text"]} for x in o]},  # new ids
+    lambda o: {"options": [{"id": x["id"], "text": x["text"], "correct": True} for x in o]},
+    lambda o: {"options": [{"id": x["id"], "text": x["text"], "tags": ["dust"]} for x in o]},
+    lambda o: {"options": [{"id": x["id"], "text": x["text"], "first_burn": 9} for x in o]},
+    lambda o: {"type": "multi"},
+])
+def test_update_first_burn_structure_locked(sample_content_dir, change):
+    before = (sample_content_dir / "questions.yaml").read_bytes()
+    opts = _get(sample_content_dir, "questions", "first_burn")["options"]
+    with pytest.raises(ContentError):
+        update_entry(sample_content_dir, "questions", "first_burn", change(opts))
+    assert (sample_content_dir / "questions.yaml").read_bytes() == before
