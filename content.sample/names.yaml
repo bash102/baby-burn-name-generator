@@ -1,19 +1,19 @@
 - {id: lil-gnomesayer, name: "Lil' Gnomesayer", tags: [gnome], status: approved, needs_owner: false, note: ""}
-- {id: sir-pointy-hat, name: "Sir Pointy Hat", tags: [gnome], status: approved, needs_owner: false, note: ""}
+- {id: sir-pointy-hat, name: "Sir Pointy Hat", tags: [gnome], words: [pointy hat, cozy], status: approved, needs_owner: false, note: ""}
 - {id: gnome-sweet-gnome, name: "Gnome Sweet Gnome", tags: [gnome], status: approved, needs_owner: false, note: ""}
 - {id: toadstool-tot, name: "Toadstool Tot", tags: [gnome, beast], status: approved, needs_owner: false, note: ""}
 - {id: dusty-bottom, name: "Dusty Bottom", tags: [dust], status: approved, needs_owner: false, note: ""}
 - {id: playa-puff, name: "Playa Puff", tags: [dust], status: approved, needs_owner: false, note: ""}
-- {id: goggle-eyes, name: "Goggle Eyes", tags: [dust], status: approved, needs_owner: false, note: ""}
+- {id: goggle-eyes, name: "Goggle Eyes", tags: [dust], words: [goggles], status: approved, needs_owner: false, note: ""}
 - {id: whiteout-wiggles, name: "Whiteout Wiggles", tags: [dust], status: approved, needs_owner: false, note: ""}
-- {id: glitter-bomb, name: "Glitter Bomb", tags: [sparkle], status: approved, needs_owner: false, note: ""}
-- {id: sparkle-pants, name: "Sparkle Pants", tags: [sparkle], status: approved, needs_owner: false, note: ""}
+- {id: glitter-bomb, name: "Glitter Bomb", tags: [sparkle], words: [glitter, chaotic], status: approved, needs_owner: false, note: ""}
+- {id: sparkle-pants, name: "Sparkle Pants", tags: [sparkle], words: [sequins, show-off], status: approved, needs_owner: false, note: ""}
 - {id: tecate-tot, name: "Tecate Tot", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
-- {id: blinky-baby, name: "Blinky Baby", tags: [sparkle, night], status: approved, needs_owner: false, note: ""}
-- {id: fuzzy-yeti, name: "Fuzzy Yeti", tags: [beast], status: approved, needs_owner: false, note: ""}
+- {id: blinky-baby, name: "Blinky Baby", tags: [sparkle, night], words: [lights], status: approved, needs_owner: false, note: ""}
+- {id: fuzzy-yeti, name: "Fuzzy Yeti", tags: [beast], words: [fur], status: approved, needs_owner: false, note: ""}
 - {id: moop-monster, name: "Moop Monster", tags: [beast], status: approved, needs_owner: false, note: ""}
 - {id: captain-crumbs, name: "Captain Crumbs", tags: [beast], status: approved, needs_owner: false, note: ""}
-- {id: sleepy-sasquatch, name: "Sleepy Sasquatch", tags: [beast, night], status: approved, needs_owner: false, note: ""}
+- {id: sleepy-sasquatch, name: "Sleepy Sasquatch", tags: [beast, night], words: [fur, sleepy], status: approved, needs_owner: false, note: ""}
 - {id: moop-patrol-pip, name: "Moop Patrol Pip", tags: [night], status: approved, needs_owner: false, note: ""}
 - {id: rebar-baby, name: "Rebar Baby", tags: [night], status: approved, needs_owner: false, note: ""}
 - {id: dawn-patrol-pip, name: "Dawn Patrol Pip", tags: [night], status: approved, needs_owner: false, note: ""}

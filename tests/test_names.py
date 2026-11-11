@@ -10,6 +10,7 @@ class N:
     id: str
     name: str
     tags: frozenset
+    words: frozenset = frozenset()
 
 
 def mk(prefix, tag, n):

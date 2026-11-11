@@ -39,7 +39,7 @@ def test_parse_tags_garbage():
 def test_fake_provider_roundtrip():
     p = T.FakeProvider(delay_s=0)
     assert p.transform(b"abc") == b"abc"
-    assert p.tag(b"abc", {"x"}) == set()
+    assert p.tag(b"abc", {"x"}) == (set(), set())
 
 
 def test_openai_transform_decodes_b64_to_jpeg():
@@ -63,7 +63,7 @@ def test_openai_tag():
             return SimpleNamespace(output_text='["gnome", "nope"]')
 
     p = T.OpenAIProvider(Config(), client=SimpleNamespace(responses=Responses()))
-    assert p.tag(jpeg(), {"gnome"}) == {"gnome"}
+    assert p.tag(jpeg(), {"gnome"}) == ({"gnome"}, set())
 
 
 def test_gemini_transform_returns_inline_data():
@@ -93,7 +93,7 @@ def test_gemini_tag():
             return SimpleNamespace(text="gnome, banana")
 
     p = T.GeminiProvider(Config(), client=SimpleNamespace(models=Models()))
-    assert p.tag(jpeg(), {"gnome"}) == {"gnome"}
+    assert p.tag(jpeg(), {"gnome"}) == ({"gnome"}, set())
 
 
 def test_get_provider_fake_and_unknown():

@@ -1,4 +1,4 @@
-"""Reset the kiosk for the party after rehearsal: forget every given name (data/names.sqlite3), empty the
+"""Reset the kiosk for the party after rehearsal: forget every given name and the match log (data/names.sqlite3), empty the
 shared album (tools/album_reset.py) and clear leftover session photos (data/photos/). Asks first.
 
 Run ON THE PI with the kiosk stopped (the album index lives in data/ there). The unit is `babyburn` on
@@ -37,7 +37,7 @@ def run(cfg: Config, s3, album: AlbumIndex, ask=input, say=print, running=runnin
             f"Stop it first: sudo systemctl stop {' '.join(active)}")
         return False
     data = cfg.data_dir
-    say(f"This forgets every given name ({data / 'names.sqlite3'}), empties the shared album "
+    say(f"This forgets every given name and the match log ({data / 'names.sqlite3'}), empties the shared album "
         f"and clears {data / 'photos'}/.")
     if ask("Type yes to reset the event: ").strip() != "yes":
         say("Aborted, nothing changed.")

@@ -38,7 +38,7 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
 
-    def create(self, photo: bytes | None, provider, vocab: Collection[str]) -> Session:
+    def create(self, photo: bytes | None, provider, vocab: Collection[str], looks: Collection[str] = ()) -> Session:
         s = Session(secrets.token_urlsafe(16), secrets.token_urlsafe(16) if photo else None, photo, self.now())
         with self._lock:
             self._sessions[s.id] = s
@@ -54,7 +54,7 @@ class SessionStore:
                 return jpeg
 
             s.transform_future = self.executor.submit(transform)
-            s.tag_future = self.executor.submit(provider.tag, photo, vocab)
+            s.tag_future = self.executor.submit(provider.tag, photo, vocab, looks)  # -> (tags, looks)
         return s
 
     def get(self, id: str) -> Session | None:

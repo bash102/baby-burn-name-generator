@@ -18,7 +18,7 @@ table{border-collapse:collapse}td,th{padding:4px 12px;text-align:left}
 button{font:inherit;padding:5px 12px;border-radius:5px;border:1px solid #888;background:#eee;cursor:pointer}
 button.yes{background:#2e7d32;color:#fff;border-color:#2e7d32}button.no{background:#fff;color:#c0392b;border-color:#c0392b}
 .row[data-status=approved] .yes,.row[data-status=rejected] .no{outline:3px solid #2b2118}
-.tag{background:#eee;border-radius:10px;padding:1px 8px;margin-right:4px;font-size:13px}
+.tag{background:#eee;border-radius:10px;padding:1px 8px;margin-right:4px;font-size:13px}.tag.w{background:#e3ecf7}
 .note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:#2e7d32}
 form.filters,details{margin:10px 0}form.filters>*{margin-right:10px}
 input,select,textarea{font:inherit;padding:4px}
@@ -32,7 +32,7 @@ form.ed .f>label>span{flex:none;min-width:4.5em;font-size:13px;color:#5a4a3a}
 form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 </style></head><body>
 <header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
-<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a>
+<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a><a href="/admin/matching">Matching</a>
 <div id="flash" class="banner err" hidden></div></header>
 <main>
 {% if sample_banner %}<div class="banner err">{{ sample_banner }}</div>{% endif %}
@@ -68,6 +68,33 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <table>{% for bid, nid, display, tagline, fb, photo in recent %}<tr><td>{{ display }}</td><td>{{ tagline }}</td>
 <td><button data-post="/admin/reprint" data-body='{{ {"id": bid}|tojson|forceescape }}'>Reprint</button></td></tr>
 {% else %}<tr><td>No badges printed yet.</td></tr>{% endfor %}</table>
+<h2>Tuning (last {{ tuning|length }} guests, cleared on restart)</h2>
+<table><tr><th>photo looks</th><th>answer words</th><th>tags</th><th>name (score)</th><th>next best</th></tr>
+{% for t in tuning %}<tr><td>{{ t.looks|join(", ") }}</td><td>{{ t.words|join(", ") }}</td><td>{{ t.tags|join(", ") }}</td>
+<td><b>{{ t.name }}</b> ({{ t.score }})</td><td>{% for n, sc in t.alts %}{{ n }} ({{ sc }}){{ ", " if not loop.last }}{% endfor %}</td></tr>
+{% else %}<tr><td>No guests yet.</td></tr>{% endfor %}</table>
+<p>Event-wide numbers: <a href="/admin/matching">Matching</a>.</p>
+
+{% elif page == "matching" %}
+<h1>Matching</h1>
+{% if not m.total %}<p>No guests yet.</p>{% else %}
+<p>{{ m.total }} guests, {{ m.photo_guests }} with a photo. <a href="/admin/matching.csv">Download CSV</a></p>
+<h2>Decided by</h2><table>{% for k, n, p in m.decided %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table>
+<h2>Photo state</h2><p>not_ready = the photo words were not back in time.</p>
+<table>{% for k, n, p in m.photo_state %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table>
+<h2>Score histogram</h2><table><tr><th>score</th><th>guests</th></tr>{% for sc, n in m.histogram %}<tr><td>{{ sc }}</td><td>{{ n }}</td></tr>{% endfor %}</table>
+<h2>Look words detected</h2><table><tr><th>word</th><th>times</th><th>% of photo guests</th></tr>
+{% for w, n, p in m.looks %}<tr><td>{{ w }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% else %}<tr><td>None yet.</td></tr>{% endfor %}</table>
+<h2>Answer words</h2><table>{% for w, n in m.answers %}<tr><td>{{ w }}</td><td>{{ n }}</td></tr>{% else %}<tr><td>None yet.</td></tr>{% endfor %}</table>
+{% endif %}
+<h2>Supply vs demand per look word</h2><p>demand = times detected, supply = unused approved names with the word (red: running out).</p>
+<table><tr><th>word</th><th>demand</th><th>supply</th></tr>
+{% for w, d, sup, low in m.supply_demand %}<tr class="{{ 'low' if low }}"><td>{{ w }}</td><td>{{ d }}</td><td>{{ sup }}</td></tr>{% endfor %}</table>
+<h2>Look words never detected</h2><p>{% for w in m.never %}<span class="tag w">{{ w }}</span>{% else %}All detected at least once.{% endfor %}</p>
+{% if m.total %}<h2>Most recent 20</h2>
+<table><tr><th>time (UTC)</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
+{% for r in m.recent %}<tr><td>{{ r.ts[11:19] }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
+<td>{{ r.display }}</td><td>{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table>{% endif %}
 
 {% else %}
 <h1>Review {{ kind }}</h1>
@@ -84,10 +111,11 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}">{% endif %}
 <div class="body">
 {% if kind == "names" %}<b class="t">{{ r.name }}</b> <span class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>
+<span class="words">{% for w in r.words|sort %}<span class="tag w">{{ w }}</span>{% endfor %}</span>
 {% elif kind == "taglines" %}<b class="t">{{ r.text }}</b>
 {% else %}<b class="t">{{ r.prompt }}</b> (<span class="ty">{{ r.type }}</span>){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
 <ul class="opts">{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
-{% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}</li>{% endfor %}</ul>
+{% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}{% for w in o.words|sort %}<span class="tag w">{{ w }}</span>{% endfor %}</li>{% endfor %}</ul>
 <div class="quip" {{ "hidden" if not r.quip }}>Quip: <i>{{ r.quip }}</i></div>{% endif %}
 {% if r.needs_owner %}<div class="note">Needs your review{% if r.note %}: {{ r.note }}{% endif %}</div>
 {% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}
@@ -99,13 +127,14 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 <details {{ 'open' if kind and msg }}><summary><b>Add a {{ kind[:-1] }}</b> (approved immediately)</summary>
 <form method="post" action="/admin/add"><input type="hidden" name="kind" value="{{ kind }}">
 {% if kind == "names" %}<p><input name="name" placeholder="Name" maxlength="{{ limits.max_name }}" required size="30">
-<input name="tags" placeholder="tags, comma separated" size="30"></p>
+<input name="tags" placeholder="tags, comma separated" size="30">
+<input name="words" placeholder="words, comma separated" size="30"></p>
 {% elif kind == "taglines" %}<p><input name="text" placeholder="Tagline" maxlength="{{ limits.max_tagline }}" required size="40"></p>
 {% else %}<p><input name="prompt" placeholder="Question" maxlength="{{ limits.max_prompt }}" required size="60">
 <select name="type"><option>single</option><option>multi</option></select></p>
 {% for s in "abcd" %}<p>{{ s }}: <input name="opt_{{ s }}" placeholder="Option text" maxlength="{{ limits.max_option }}" size="40">
 <label><input type="checkbox" name="correct_{{ s }}"> correct</label>
-<input name="tags_{{ s }}" placeholder="tags" size="20"></p>{% endfor %}
+<input name="tags_{{ s }}" placeholder="tags" size="20"> <input name="words_{{ s }}" placeholder="words" size="20"></p>{% endfor %}
 <p><input name="quip" placeholder="Quip (optional)" maxlength="{{ limits.max_quip }}" size="40"></p>{% endif %}
 <button class="yes">Add</button></form></details>
 {% endif %}
@@ -135,31 +164,33 @@ const LIM = {{ limits|tojson }};
 const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 const field = (name, value, max, placeholder) => { const i = el("input", {name, value: value || "", placeholder}); if (max) i.maxLength = max; return i; };
 const tagList = s => s.split(",").map(t => t.trim()).filter(Boolean);
-const tagSpans = ts => ts.map(t => el("span", {className: "tag", textContent: t}));
+const tagSpans = (ts, cls) => ts.map(t => el("span", {className: cls || "tag", textContent: t}));
+const wordSpans = ws => tagSpans(ws || [], "tag w");
 function paint(row, d) {
   row.dataset.edit = JSON.stringify(d);
   const t = row.querySelector(".t");
   if (kind === "names") {
     t.textContent = d.name; row.querySelector(".tags").replaceChildren(...tagSpans(d.tags));
+    row.querySelector(".words").replaceChildren(...wordSpans(d.words));
     row.querySelector("img").src = "/admin/preview/" + encodeURIComponent(row.dataset.id) + ".png?v=" + d.key;
   } else if (kind === "taglines") t.textContent = d.text;
   else {
     t.textContent = d.prompt; row.querySelector(".ty").textContent = d.type;
     row.querySelector(".opts").replaceChildren(...d.options.map(o => el("li", {className: o.correct ? "correct" : ""},
-      o.text + (o.correct ? " (correct) " : " "), ...tagSpans(o.tags))));
+      o.text + (o.correct ? " (correct) " : " "), ...tagSpans(o.tags), ...wordSpans(o.words))));
     const q = row.querySelector(".quip"); q.hidden = !d.quip; q.querySelector("i").textContent = d.quip;
   }
 }
 function fields(f, d) {
   const v = n => f.elements[n].value;
-  if (kind === "names") return {name: v("name"), tags: tagList(v("tags"))};
+  if (kind === "names") return {name: v("name"), tags: tagList(v("tags")), words: tagList(v("words"))};
   if (kind === "taglines") return {text: v("text")};
   const out = {prompt: v("prompt"), quip: v("quip")};
   if (!d.fixed) out.type = v("type");
   out.options = [...f.querySelectorAll(".opt")].map((p, i) => {
     const o = {text: v("opt" + i)};
     if (p.dataset.id) o.id = p.dataset.id;
-    if (!d.fixed) { o.correct = f.elements["correct" + i].checked; o.tags = tagList(v("tags" + i)); }
+    if (!d.fixed) { o.correct = f.elements["correct" + i].checked; o.tags = tagList(v("tags" + i)); o.words = tagList(v("words" + i)); }
     return o;
   }).filter(o => d.fixed || o.text.trim());  // a blank row drops that option
   return out;
@@ -169,7 +200,8 @@ function openEdit(row) {
   const d = JSON.parse(row.dataset.edit), f = el("form", {className: "ed"});
   const line = (...k) => el("div", {className: "f"}, ...k), lab = (text, input) => el("label", {}, el("span", {}, text), input);
   if (kind === "names") f.append(line(lab("Name", field("name", d.name, LIM.max_name, "Name"))),
-                                 line(lab("Tags", field("tags", d.tags.join(", "), 0, "comma separated"))));
+                                 line(lab("Tags", field("tags", d.tags.join(", "), 0, "comma separated"))),
+                                 line(lab("Words", field("words", d.words.join(", "), 0, "looks/vibes, comma separated"))));
   else if (kind === "taglines") f.append(line(lab("Tagline", field("text", d.text, LIM.max_tagline, "Tagline"))));
   else {
     const type = el("select", {name: "type", disabled: d.fixed}, el("option", {}, "single"), el("option", {}, "multi"));
@@ -178,11 +210,12 @@ function openEdit(row) {
     // every existing option gets a slot (never drop extras), plus blanks up to 4; the fixed question: its own only
     const n = d.fixed ? d.options.length : Math.max(4, d.options.length);
     for (let i = 0; i < n; i++) {
-      const o = d.options[i] || {text: "", correct: false, tags: []};
+      const o = d.options[i] || {text: "", correct: false, tags: [], words: []};
       const r = el("div", {className: "opt"}, line(lab("Answer " + (i + 1), field("opt" + i, o.text, LIM.max_option, "Answer text"))));
       if (o.id) r.dataset.id = o.id;
       if (!d.fixed) r.append(line(el("label", {className: "chk"}, el("input", {type: "checkbox", name: "correct" + i, checked: o.correct}), " correct"),
-                                  lab("tags", field("tags" + i, o.tags.join(", "), 0, "comma separated"))));
+                                  lab("tags", field("tags" + i, o.tags.join(", "), 0, "comma separated")),
+                                  lab("words", field("words" + i, o.words.join(", "), 0, "comma separated"))));
       f.append(r);
     }
     f.append(line(lab("Quip", field("quip", d.quip, LIM.max_quip, "optional"))));

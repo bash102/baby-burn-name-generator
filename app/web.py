@@ -47,6 +47,7 @@ class AppState:
     cloud: CloudPhotos
     content_error: str | None = None
     recent_badges: deque = field(default_factory=lambda: deque(maxlen=50))  # (id, name_id, display, tagline, first_burn, photo_url)
+    tuning: deque = field(default_factory=lambda: deque(maxlen=10))  # last guests' match inputs; memory only
     rng: random.Random = field(default_factory=random.SystemRandom)
 
     def reload_content(self) -> None:
@@ -132,7 +133,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         photo = f.read() if f else None
         if photo and not photo.startswith(b"\xff\xd8"):
             return jsonify(error="photo must be a JPEG"), 400
-        s = sessions.create(photo or None, st.provider, st.content.tag_vocab)
+        s = sessions.create(photo or None, st.provider, st.content.tag_vocab, st.content.looks)
         return jsonify(session_id=s.id, has_photo=s.token is not None)
 
     @app.get("/api/quiz")
@@ -257,19 +258,26 @@ def _parse_answers(body) -> dict[str, set[str]] | None:
 
 
 def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
-    tags, first_burn = set(), None
+    tags, words, looks, first_burn = set(), set(), set(), None
     fb, pool = _served(st.content)
     for q in ([fb] if fb else []) + pool:
         for o in q.options:
             if o.id in chosen.get(q.id, ()):
                 tags |= o.tags
+                words |= o.words
                 if q.fixed == "first_burn" and first_burn is None:
                     first_burn = o.first_burn
-    f = s.tag_future
-    if f and f.done() and not f.exception():  # costume tags only if ready; never wait
-        tags |= f.result()
+    f, photo_state = s.tag_future, "none"
+    if f:
+        photo_state = "not_ready"
+        if f.done() and not f.exception():  # costume tags and looks only if ready; never wait
+            photo_tags, looks = f.result()
+            tags |= photo_tags
+            photo_state = "ready"
 
-    name_id, display = st.names.pick(tags, st.rng)
+    explain: dict = {}
+    name_id, display = st.names.pick(tags, st.rng, looks=looks, words=words, photo_state=photo_state, explain=explain)
+    st.tuning.append({"looks": sorted(looks), "words": sorted(words), "tags": sorted(tags), **explain})
     lines = st.content.approved_taglines
     tagline = st.rng.choice(lines).text if lines else ""
     photo_url = st.cloud.url(s.token) if s.token else None
