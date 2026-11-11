@@ -19,7 +19,7 @@ from app.transform import FakeProvider
 
 BASE = "https://ph.example"
 SECRET = "sekret-album-key-16"
-ALBUM_STATUS = "This photo is in the Baby Burn album and stays there."
+ALBUM_STATUS = "This photo is in the Baby Burn Album and stays there."
 T0 = datetime(2026, 11, 14, 18, 30, tzinfo=timezone.utc)
 
 
@@ -244,8 +244,9 @@ def test_choice_album_moves_to_album_prefix(k):
     assert not [x for x in k.keys() if x.startswith(f"tmp/{tok}/")]
     assert ALBUM_STATUS in k.page(tok) and "will be deleted around" not in k.page(tok)
     assert html.escape(r["name"]) in k.album_page() and tok in k.album_page()
-    assert f"<a href='{BASE}/album/{SECRET}/{tok}/original.jpg'><img src='{BASE}/album/{SECRET}/{tok}/dusty.jpg'" \
-        in k.album_page()  # grid shows dusty, tap for original
+    assert f"<a href='{BASE}/album/{SECRET}/{tok}/dusty.jpg'><img src='{BASE}/album/{SECRET}/{tok}/dusty.jpg'" \
+        in k.album_page()  # grid shows dusty, tap for the full-size dusty
+    assert f"<a class=orig href='{BASE}/album/{SECRET}/{tok}/original.jpg'>Original</a>" in k.album_page()
     assert list((k.cfg.data_dir / "album").glob(f"*{tok}*original.jpg"))
 
 
@@ -329,7 +330,12 @@ def test_photo_page_states():
 def test_no_photo_no_upload(k):
     k.finish(k.session(photo=False))
     k.drain()
-    assert k.s3.objects == {}
+    assert list(k.s3.objects) == [f"album/{SECRET}/index.html"]  # only the album page, re-put at startup
+
+
+def test_startup_reputs_the_album_page(k):
+    k.drain()
+    assert b"No photos yet" in k.s3.objects[f"album/{SECRET}/index.html"]["Body"]
 
 
 def test_skip_everything(k, monkeypatch):
