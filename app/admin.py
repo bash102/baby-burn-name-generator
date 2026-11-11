@@ -455,7 +455,7 @@ def photo_delete():
         return jsonify(error="token must be a photo token"), 400
     # ponytail: full badge scan; fine for the hundreds a party makes.
     if token not in dict(st.cloud.album.entries()) and not any(
-            b["photo_url"] == st.cloud.url(token) for b in st.names.badges()):
+            (b["photo_url"] or "").rsplit("/", 1)[-1] == token for b in st.names.badges()):  # survives a base URL change
         return jsonify(error="no such photo"), 404
     if not st.delete_photo(token):
         return jsonify(error="cloud delete not confirmed; try again"), 502

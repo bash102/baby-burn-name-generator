@@ -170,6 +170,7 @@ document.querySelectorAll("[data-post]").forEach(b => b.onclick = () => {
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
     else if (/update\/sync$/.test(b.dataset.post)) flash("Update started — the kiosk restarts if there's a new version; check status in a minute", true);
+    else if (b.dataset.confirm && b.closest(".row")) b.closest(".row").classList.add("gone");  // removed album photo
     else b.textContent += " ✓";
   }).catch(e => flash("Failed: " + e.message)).finally(() => { b.disabled = false; }); });
 const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};
