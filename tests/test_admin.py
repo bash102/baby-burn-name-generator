@@ -369,7 +369,7 @@ def test_edit_installs_without_reload_and_kiosk_serves_it(k, monkeypatch):
                                      "fields": {"name": "Dusty Tush", "tags": ["Dust", "gnome"]}})
     row = r.get_json()["row"]
     assert r.status_code == 200 and r.get_json()["ok"] is True
-    assert row == {"name": "Dusty Tush", "tags": ["dust", "gnome"], "key": preview_key("Dusty Tush")} and row["key"] != old
+    assert row == {"name": "Dusty Tush", "tags": ["dust", "gnome"], "words": [], "key": preview_key("Dusty Tush")} and row["key"] != old
     assert k.state.content == load_content(k.cfg.content_dir)
     k.state.names.set_pool([n for n in k.state.names._pool if n.id == "dusty-bottom"])
     assert k.state.names.pick(set(), k.state.rng) == ("dusty-bottom", "Dusty Tush")

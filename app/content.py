@@ -20,6 +20,7 @@ STATUSES = frozenset({"draft", "approved", "rejected"})
 QUESTION_TYPES = frozenset({"single", "multi"})
 # Max characters per field so badge and kiosk text always fit.
 MAX_NAME, MAX_TAGLINE, MAX_OPTION, MAX_QUIP, MAX_PROMPT = 40, 32, 55, 60, 200
+MAX_WORDS = 8  # look/vibe words per name or option, and look words per photo
 
 # Safety net only: drug terms, real politicians, party names. The owner's review is the real gate.
 BANNED_WORDS: frozenset[str] = frozenset({
@@ -51,6 +52,7 @@ class Name:
     status: str
     needs_owner: bool
     note: str
+    words: frozenset[str] = frozenset()  # look/vibe words from descriptors.yaml
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class Option:
     correct: bool
     tags: frozenset[str]
     first_burn: int | None
+    words: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,8 @@ class Content:
     questions: list[Question]
     taglines: list[Tagline]
     warnings: list[str] = field(default_factory=list)  # non-blocking findings for the owner
+    looks: frozenset[str] = frozenset()  # descriptors.yaml: visible costume words the photo call may return
+    vibes: frozenset[str] = frozenset()  # descriptors.yaml: words only quiz answers imply
 
     @property
     def approved_names(self) -> list[Name]:
@@ -164,9 +169,53 @@ def _tags(where: str, r: dict, errs: list[str]) -> frozenset[str]:
     return frozenset(t.lower() for t in tags)  # tags match case-insensitively
 
 
+def _norm(v: Any) -> list[str] | None:
+    """Stripped, lowercased, deduped strings in order; None when v is not a list of strings."""
+    if not isinstance(v, list) or not all(isinstance(t, str) for t in v):
+        return None
+    return list(dict.fromkeys(t.strip().lower() for t in v if t.strip()))
+
+
+def _descriptors(d: Any, errs: list[str]) -> tuple[frozenset[str], frozenset[str]]:
+    """(looks, vibes) from descriptors.yaml; both empty when the file is absent."""
+    if d is None:
+        return frozenset(), frozenset()
+    if not isinstance(d, dict):
+        errs.append("descriptors.yaml: top level must be a mapping with looks and vibes")
+        return frozenset(), frozenset()
+    out, seen = [], set()
+    for key in ("looks", "vibes"):
+        words = _norm(d.get(key) or [])
+        if words is None:
+            errs.append(f"descriptors.{key}: must be a list of strings")
+            words = []
+        for w in words:
+            if not 1 <= len(w.split()) <= 2:
+                errs.append(f"descriptors.{key}: {w!r} must be 1-2 words")
+            if w in seen:
+                errs.append(f"descriptors.{key}: {w!r} appears more than once")
+            seen.add(w)
+        out.append(frozenset(words))
+    return out[0], out[1]
+
+
+def _words(where: str, r: dict, allowed: frozenset[str], errs: list[str]) -> frozenset[str]:
+    words = _norm(r.get("words") or [])
+    if words is None:
+        errs.append(f"{where}: words must be a list of strings")
+        return frozenset()
+    if len(words) > MAX_WORDS:
+        errs.append(f"{where}: at most {MAX_WORDS} words, got {len(words)}")
+    if unknown := [w for w in words if w not in allowed]:
+        errs.append(f"{where}: unknown word(s) {unknown} (add them to descriptors.yaml first)")
+    return frozenset(words)
+
+
 def _build(raw: dict[str, Any]) -> Content:
     errs: list[str] = []
     warnings: list[str] = []
+    looks, vibes = _descriptors(raw.get("descriptors"), errs)
+    allowed = looks | vibes
 
     names, seen, texts = [], set(), set()
     for r in _dicts("names", raw["names"], errs):
@@ -182,7 +231,7 @@ def _build(raw: dict[str, Any]) -> Content:
         if note:
             _check_text(where + ".note", note, ok, errs, 500)
         names.append(Name(str(r.get("id")), str(r.get("name")), _tags(where, r, errs), status,
-                          bool(r.get("needs_owner", False)), note))
+                          bool(r.get("needs_owner", False)), note, _words(where, r, allowed, errs)))
     vocab = frozenset(t for n in names if n.status == "approved" for t in n.tags)
 
     taglines, seen = [], set()
@@ -220,7 +269,8 @@ def _build(raw: dict[str, Any]) -> Content:
             if fb is not None and (not isinstance(fb, int) or isinstance(fb, bool)):
                 errs.append(f"{ow}: first_burn must be an integer")
                 fb = None
-            opts.append(Option(str(o.get("id")), str(o.get("text")), bool(o.get("correct", False)), otags, fb))
+            opts.append(Option(str(o.get("id")), str(o.get("text")), bool(o.get("correct", False)), otags, fb,
+                               _words(ow, o, allowed, errs)))
         # ceiling: a question with no correct option is allowed only as a pure preference question
         # (every option tagged), which the sample content relies on.
         if not fixed and opts and not any(o.correct for o in opts) and not all(o.tags for o in opts):
@@ -234,7 +284,7 @@ def _build(raw: dict[str, Any]) -> Content:
 
     if errs:
         raise ContentError("\n".join(errs))
-    return Content(names, questions, taglines, warnings)
+    return Content(names, questions, taglines, warnings, looks, vibes)
 
 
 def _read_raw(dir: Path) -> dict[str, Any]:
@@ -247,6 +297,11 @@ def _read_raw(dir: Path) -> dict[str, Any]:
             raise ContentError(f"{path.name}: cannot read/parse: {e}") from e
         if raw[kind] is None:
             raw[kind] = []
+    path = Path(dir) / "descriptors.yaml"  # optional: without it no name or option may carry words
+    try:
+        raw["descriptors"] = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader) if path.exists() else None
+    except (OSError, yaml.YAMLError) as e:
+        raise ContentError(f"{path.name}: cannot read/parse: {e}") from e
     return raw
 
 
@@ -301,8 +356,8 @@ def append_entry(dir: Path, kind: Kind, entry: dict) -> Content:
         return _commit(dir, kind, raw)
 
 
-_EDITABLE = {"names": {"name", "tags"}, "taglines": {"text"}, "questions": {"prompt", "type", "quip", "options"}}
-_OPTION_KEYS = {"id", "text", "correct", "tags"}
+_EDITABLE = {"names": {"name", "tags", "words"}, "taglines": {"text"}, "questions": {"prompt", "type", "quip", "options"}}
+_OPTION_KEYS = {"id", "text", "correct", "tags", "words"}
 
 
 def _str(where: str, v: Any) -> str:
@@ -311,10 +366,10 @@ def _str(where: str, v: Any) -> str:
     return v.strip()
 
 
-def _tag_list(where: str, v: Any) -> list[str]:
-    if not isinstance(v, list) or not all(isinstance(t, str) for t in v):
-        raise ContentError(f"{where}: tags must be a list of strings")
-    return list(dict.fromkeys(t.strip().lower() for t in v if t.strip()))  # deduped, order kept
+def _tag_list(where: str, v: Any, what: str = "tags") -> list[str]:
+    if (out := _norm(v)) is None:
+        raise ContentError(f"{where}: {what} must be a list of strings")
+    return out  # deduped, order kept
 
 
 def _edit_options(where: str, old: list[dict], new: Any, fixed: bool) -> list[dict]:
@@ -336,18 +391,23 @@ def _edit_options(where: str, old: list[dict], new: Any, fixed: bool) -> list[di
         cur = dict(by_id.get(o.get("id")) or {"id": next(free)})
         cur["text"] = _str(f"{where}.text", o.get("text"))
         correct, tags = o.get("correct", False), _tag_list(where, o.get("tags", []))
+        words = _tag_list(where, o.get("words", []), "words")
         if not isinstance(correct, bool):
             raise ContentError(f"{where}: correct must be true or false")
         if fixed:
-            if correct != bool(cur.get("correct")) or sorted(tags) != sorted(_tag_list(where, cur.get("tags") or [])):
+            if (correct != bool(cur.get("correct")) or sorted(tags) != sorted(_tag_list(where, cur.get("tags") or []))
+                    or sorted(words) != sorted(_tag_list(where, cur.get("words") or [], "words"))):
                 raise ContentError(f"{where}: the first-burn question's options are fixed; only their text can change")
         else:
             cur.pop("correct", None)
             cur.pop("tags", None)
+            cur.pop("words", None)
             if correct:
                 cur["correct"] = True
             if tags:
                 cur["tags"] = tags
+            if words:
+                cur["words"] = words
         out.append(cur)
     return out
 
@@ -369,6 +429,11 @@ def update_entry(dir: Path, kind: Kind, id: str, fields: dict) -> Content:
         for k, v in fields.items():
             if k == "tags":
                 r["tags"] = _tag_list(where, v)
+            elif k == "words":
+                if words := _tag_list(where, v, "words"):
+                    r["words"] = words
+                else:
+                    r.pop("words", None)
             elif k == "options":
                 r["options"] = _edit_options(where, [o for o in r.get("options") or [] if isinstance(o, dict)], v, fixed)
             elif k == "quip":

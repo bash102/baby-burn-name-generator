@@ -1,0 +1,6 @@
+# Words that link guests to names. Lowercase, 1-2 words each, unique across both lists.
+# looks: visible on a person's costume (the photo call picks from these). Never body, face, hair, skin, age,
+# gender or ethnicity words.
+looks: [pink, feathers, sequins, goggles, fur, lights, pointy hat, glitter]
+# vibes: not visible; set on quiz answer options.
+vibes: [sleepy, chaotic, cozy, show-off]

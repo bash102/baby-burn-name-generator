@@ -20,7 +20,7 @@
   type: single
   prompt: "Pick your ride for the playa."
   options:
-    - {id: a, text: "A bike with too many blinky lights", tags: [sparkle]}
+    - {id: a, text: "A bike with too many blinky lights", tags: [sparkle], words: [show-off]}
     - {id: b, text: "A sturdy wagon pulled by a gnome", tags: [gnome]}
     - {id: c, text: "An art car shaped like a giant fish", tags: [beast]}
   quip: "If it doesn't blink, it doesn't exist."
@@ -31,7 +31,7 @@
   prompt: "What is in your go-bag? Pick all that apply."
   options:
     - {id: a, text: "Goggles and a dust mask", tags: [dust]}
-    - {id: b, text: "Glitter, obviously", tags: [sparkle]}
+    - {id: b, text: "Glitter, obviously", tags: [sparkle], words: [chaotic]}
     - {id: c, text: "A tiny pointy hat", tags: [gnome]}
     - {id: d, text: "Fuzzy boots", tags: [beast]}
   quip: "You will find that glitter in 2031."
@@ -42,8 +42,8 @@
   prompt: "How do you greet the sunrise?"
   options:
     - {id: a, text: "Still awake from last night", tags: [night]}
-    - {id: b, text: "Up early with coffee for everyone", tags: [gnome]}
-    - {id: c, text: "Asleep until noon", tags: [beast]}
+    - {id: b, text: "Up early with coffee for everyone", tags: [gnome], words: [cozy]}
+    - {id: c, text: "Asleep until noon", tags: [beast], words: [sleepy]}
   quip: "The sun has never once asked how you slept."
   status: approved
   needs_owner: false

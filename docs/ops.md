@@ -194,6 +194,8 @@ Common jobs:
 - Reprint a badge: open the guest's entry in admin and press **Reprint**.
 - Switch AI provider: use the provider control in admin (no restart needed).
 
+**Look and vibe words.** `descriptors.yaml` in the content repo lists `looks` (things visible on a costume: colors, materials, accessories, lights, props) and `vibes` (moods only quiz answers imply). Names and quiz answer options can carry up to 8 of these `words` (edit them on the admin review page; unknown words are refused). The photo call picks looks from the list (it is told never to describe face, body, hair, skin, age, gender or ethnicity), and the name pick scores 4 per photo look match, up to 2 for answer-word matches and up to 1 for a tag match, so one photo match outweighs everything else (weights in `app/names.py`). Without `descriptors.yaml` matching works on tags alone, as before. To tune: the dashboard's **Tuning** table shows the last 10 guests (memory only, gone on restart) with their looks, answer words, tags, the chosen name's score and the next best names; **Matching** (`/admin/matching`) has event-wide numbers from the `match_log` table in `data/names.sqlite3` (one row per badge: words, scores, what decided it; never the photo or its link), including look words that names are running out of (red) and look words never detected, plus a CSV export. If a look keeps showing up with few names left, add names carrying it.
+
 If something breaks:
 
 | Problem | What to do | What the guest sees |
@@ -219,7 +221,7 @@ sudo systemctl start $UNIT
 
 `<clone>` is `~/baby-burn-name-generator` or `~/apps/baby-burn-name-generator`. `reset_event.py` refuses to run while either `babyburn` or `app-babyburn` is active and prints which to stop.
 
-`reset_event.py` deletes `data/names.sqlite3`, empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
+`reset_event.py` deletes `data/names.sqlite3` (given names and the match log), empties the album (same as `tools/album_reset.py`: deletes the `album/<ALBUM_SECRET>/` objects and marks those photo pages deleted) and clears `data/photos/`. Unshared rehearsal photos in `tmp/` expire on their own.
 
 ## 9. After the party
 

@@ -9,6 +9,7 @@ from typing import Collection, Protocol
 from PIL import Image
 
 from app.config import Config
+from app.content import MAX_WORDS
 
 DUSTY_PROMPT = (
     "Turn the person in this photo into a playful, adorable dusty BABY version of themselves: "
@@ -19,15 +20,32 @@ DUSTY_PROMPT = (
     "or scary. Family friendly: no drugs, nothing sexual. Keep the same framing as the photo."
 )
 
+_PHOTO_PROMPT = (
+    "Describe only what the person in the photo is wearing or carrying: clothing, costume, colors, materials, "
+    "accessories, lights and props. Never describe their face, body, hair, skin, age, gender or ethnicity. "
+    "Pick the tags that fit from: {vocab}. Pick up to {max_looks} looks that are clearly visible from: {looks}. "
+    "Use only words from these lists. Reply with only JSON, e.g. "
+    '{{"tags": ["tag"], "looks": ["look"]}}; use empty lists if nothing fits.'
+)
+
+
+_PRIVACY = "Never describe their face, body, hair, skin, age, gender or ethnicity. "
+# Without descriptors.yaml (no looks): the original tag-only prompt and JSON-array reply, plus the privacy line.
 _TAG_PROMPT = (
-    "Which of these tags describe the person's look or costume in the photo? Tags: {vocab}. "
+    "Which of these tags describe the person's look or costume in the photo? Tags: {vocab}. " + _PRIVACY +
     "Reply with only a JSON array of the matching tags, e.g. [\"tag\"]. Use [] if none match."
 )
 
 
+def photo_prompt(vocab: Collection[str], looks: Collection[str]) -> str:
+    if not looks:
+        return _TAG_PROMPT.format(vocab=sorted(vocab))
+    return _PHOTO_PROMPT.format(vocab=sorted(vocab), looks=sorted(looks), max_looks=MAX_WORDS)
+
+
 class Provider(Protocol):
     def transform(self, jpeg: bytes) -> bytes: ...
-    def tag(self, jpeg: bytes, vocab: Collection[str]) -> set[str]: ...
+    def tag(self, jpeg: bytes, vocab: Collection[str], looks: Collection[str] = ()) -> tuple[set[str], set[str]]: ...
 
 
 def parse_tags(text: str, vocab: Collection[str]) -> set[str]:
@@ -42,6 +60,26 @@ def parse_tags(text: str, vocab: Collection[str]) -> set[str]:
     return {s for s in (str(i).strip().strip("\"'[]").lower() for i in items) if s in allowed}
 
 
+def parse_photo(text: str, vocab: Collection[str], looks: Collection[str]) -> tuple[set[str], set[str]]:
+    """(tags, looks) from the reply {"tags": [...], "looks": [...]}: only list members survive (so no face or
+    body word can get through), at most MAX_WORDS looks. An old array/comma reply still gives tags. Never raises."""
+    text = (text or "").strip()
+    m = re.search(r"\{.*\}", text, re.DOTALL)  # tolerate ```json fences or chatter around the object
+    try:
+        data = json.loads(m.group(0)) if m else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return parse_tags(text, vocab), set()
+
+    def keep(key, allowed):
+        items, allowed = data.get(key), {a.lower() for a in allowed}
+        words = (str(i).strip().lower() for i in items) if isinstance(items, list) else ()
+        return list(dict.fromkeys(w for w in words if w in allowed))
+
+    return set(keep("tags", vocab)), set(keep("looks", looks)[:MAX_WORDS])
+
+
 def _to_jpeg(data: bytes, max_side: int = 1280, quality: int = 85) -> bytes:
     """Re-encode whatever the model returned as a JPEG well under ~1 MB."""
     img = Image.open(io.BytesIO(data)).convert("RGB")
@@ -52,15 +90,15 @@ def _to_jpeg(data: bytes, max_side: int = 1280, quality: int = 85) -> bytes:
 
 
 class FakeProvider:
-    def __init__(self, delay_s: float = 3.0):
-        self.delay_s = delay_s
+    def __init__(self, delay_s: float = 3.0, looks: Collection[str] = ()):
+        self.delay_s, self.looks = delay_s, set(looks)  # looks: what tag() "sees", for tests and dev
 
     def transform(self, jpeg: bytes) -> bytes:
         time.sleep(self.delay_s)
         return jpeg
 
-    def tag(self, jpeg: bytes, vocab: Collection[str]) -> set[str]:
-        return set()
+    def tag(self, jpeg: bytes, vocab: Collection[str], looks: Collection[str] = ()) -> tuple[set[str], set[str]]:
+        return set(), self.looks & set(looks)
 
 
 class OpenAIProvider:
@@ -80,16 +118,16 @@ class OpenAIProvider:
         )
         return _to_jpeg(base64.b64decode(res.data[0].b64_json))
 
-    def tag(self, jpeg: bytes, vocab: Collection[str]) -> set[str]:
+    def tag(self, jpeg: bytes, vocab: Collection[str], looks: Collection[str] = ()) -> tuple[set[str], set[str]]:
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
         res = self.client.responses.create(
             model=self.cfg.openai_vision_model,
             input=[{"role": "user", "content": [
-                {"type": "input_text", "text": _TAG_PROMPT.format(vocab=sorted(vocab))},
+                {"type": "input_text", "text": photo_prompt(vocab, looks)},
                 {"type": "input_image", "image_url": url},
             ]}],
         )
-        return parse_tags(res.output_text, vocab)
+        return parse_photo(res.output_text, vocab, looks)
 
 
 class GeminiProvider:
@@ -125,12 +163,12 @@ class GeminiProvider:
         reasons = [str(getattr(c, "finish_reason", None)) for c in res.candidates or []]
         raise RuntimeError(f"Gemini returned no image (finish_reason: {', '.join(reasons) or 'no candidates'})")
 
-    def tag(self, jpeg: bytes, vocab: Collection[str]) -> set[str]:
+    def tag(self, jpeg: bytes, vocab: Collection[str], looks: Collection[str] = ()) -> tuple[set[str], set[str]]:
         res = self.client.models.generate_content(
             model=self.cfg.gemini_vision_model,
-            contents=[_TAG_PROMPT.format(vocab=sorted(vocab)), self._part(jpeg)],
+            contents=[photo_prompt(vocab, looks), self._part(jpeg)],
         )
-        return parse_tags(res.text, vocab)
+        return parse_photo(res.text, vocab, looks)
 
 
 def get_provider(name: str, cfg: Config) -> Provider:

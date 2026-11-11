@@ -1,6 +1,9 @@
 """PIN-protected owner pages: dashboard, content review/add, reprint. HTTP Basic, password = ADMIN_PIN."""
+import csv
 import hashlib
 import hmac
+import io
+import json
 import logging
 import os
 import pwd
@@ -10,6 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -22,6 +26,7 @@ from app.coloring import page_files, pick_page
 from app.config import PROVIDERS
 from app.content import (KINDS, MAX_NAME, MAX_OPTION, MAX_PROMPT, MAX_QUIP, MAX_TAGLINE, STATUSES, ContentError,
                          append_entry, set_status, update_entry)
+from app.names import MATCH_LOG_COLS
 from app.transform import get_provider
 
 log = logging.getLogger(__name__)
@@ -179,7 +184,63 @@ def dashboard():
         by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
         providers=sorted(PROVIDERS), recent=list(st.recent_badges)[::-1],
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
-        updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"))
+        updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"),
+        tuning=list(st.tuning)[::-1])
+
+
+SUPPLY_LOW = 2  # a detected look word with this few unused names left is flagged
+
+
+def _pct(n: int, total: int) -> int:
+    return round(100 * n / total) if total else 0
+
+
+def matching_stats(rows: list[dict], looks, supply: dict[str, int]) -> dict:
+    """The /admin/matching numbers from match_log rows (JSON columns as text) in one pass.
+    `supply` is unused approved names per word."""
+    decided, states, hist, seen, answers = Counter(), Counter(), Counter(), Counter(), Counter()
+    for r in rows:
+        decided[r["decided_by"]] += 1
+        states[r["photo_state"]] += 1
+        hist[r["score"]] += 1
+        seen.update(json.loads(r["looks"]))
+        answers.update(json.loads(r["answer_words"]))
+    total, photo_guests = len(rows), len(rows) - states["none"]
+    return {
+        "total": total, "photo_guests": photo_guests,
+        "decided": [(k, n, _pct(n, total)) for k, n in decided.most_common()],
+        "photo_state": [(k, n, _pct(n, total)) for k, n in states.most_common()],
+        "histogram": sorted(hist.items()),
+        "looks": [(w, n, _pct(n, photo_guests)) for w, n in seen.most_common()],
+        "answers": answers.most_common(),
+        "supply_demand": sorted(((w, seen[w], supply.get(w, 0), seen[w] > 0 and supply.get(w, 0) <= SUPPLY_LOW)
+                                 for w in set(looks) | set(seen)), key=lambda x: (-x[1], x[0])),
+        "never": sorted(set(looks) - set(seen)),
+        "recent": [{**r, **{k: ", ".join(json.loads(r[k])) for k in ("looks", "answer_words", "tags")}}
+                   for r in rows[-20:][::-1]],
+    }
+
+
+@bp.get("/matching")
+def matching():
+    st = _st()
+    stats = matching_stats(st.names.match_rows(), st.content.looks, st.names.remaining_by_word())
+    return render_template("admin.html", page="matching", st=st, m=stats)
+
+
+def _cell(v):
+    """A CSV cell a spreadsheet will not run as a formula (names are owner-written, but still)."""
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
+@bp.get("/matching.csv")
+def matching_csv():
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(MATCH_LOG_COLS)
+    w.writerows([_cell(r[c]) for c in MATCH_LOG_COLS] for r in _st().names.match_rows())
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=match_log.csv"})
 
 
 @bp.get("/review")
@@ -202,11 +263,12 @@ def review():
 def edit_data(kind: str, r) -> dict:
     """A review row's editable values: the Edit form's prefill, and /admin/edit's reply for repainting the row."""
     if kind == "names":
-        return {"name": r.name, "tags": sorted(r.tags), "key": preview_key(r.name)}
+        return {"name": r.name, "tags": sorted(r.tags), "words": sorted(r.words), "key": preview_key(r.name)}
     if kind == "taglines":
         return {"text": r.text}
     return {"prompt": r.prompt, "type": r.type, "quip": r.quip, "fixed": bool(r.fixed),
-            "options": [{"id": o.id, "text": o.text, "correct": o.correct, "tags": sorted(o.tags)} for o in r.options]}
+            "options": [{"id": o.id, "text": o.text, "correct": o.correct, "tags": sorted(o.tags),
+                         "words": sorted(o.words)} for o in r.options]}
 
 
 @bp.post("/edit")
@@ -257,8 +319,11 @@ def _tags(raw: str) -> list[str]:
 def _entry(kind: str, f, taken: set[str]) -> dict:
     if kind == "names":
         name = f.get("name", "").strip()
-        return {"id": _slug(name, taken), "name": name, "tags": _tags(f.get("tags", "")),
-                "status": "approved", "needs_owner": False, "note": ""}
+        e = {"id": _slug(name, taken), "name": name, "tags": _tags(f.get("tags", "")),
+             "status": "approved", "needs_owner": False, "note": ""}
+        if words := _tags(f.get("words", "")):
+            e["words"] = words
+        return e
     if kind == "taglines":
         text = f.get("text", "").strip()
         return {"id": _slug(text, taken), "text": text, "status": "approved"}
@@ -271,6 +336,8 @@ def _entry(kind: str, f, taken: set[str]) -> dict:
                 o["correct"] = True
             if tags := _tags(f.get(f"tags_{s}", "")):
                 o["tags"] = tags
+            if words := _tags(f.get(f"words_{s}", "")):
+                o["words"] = words
             options.append(o)
     q = {"id": _slug(prompt, taken), "type": "multi" if f.get("type") == "multi" else "single",
          "prompt": prompt, "options": options, "status": "approved", "needs_owner": False}
