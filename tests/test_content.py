@@ -233,15 +233,15 @@ def test_tags_are_lowercased_on_load(sample_content_dir):
     assert opt.tags and all(t == t.lower() for t in opt.tags) and c.warnings == []
 
 
-def test_single_question_has_at_most_one_correct_option(sample_content_dir):
+def test_single_question_may_have_several_correct_options(sample_content_dir):
     qs = _read(sample_content_dir, "questions")
     q = next(q for q in qs if q["id"] == "margarita")
     assert q["type"] == "single"
-    for o in q["options"]:
+    for o in q["options"][:2]:
         o["correct"] = True
     _write(sample_content_dir, "questions", qs)
-    with pytest.raises(ContentError, match="exactly one correct"):
-        load_content(sample_content_dir)
+    loaded = next(x for x in load_content(sample_content_dir).questions if x.id == "margarita")
+    assert sum(o.correct for o in loaded.options) == 2
 
 
 def _get(d, kind, id):

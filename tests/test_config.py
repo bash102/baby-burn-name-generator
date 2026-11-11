@@ -180,3 +180,4 @@ def test_coloring_dir_defaults_under_content_dir(tmp_path):
     assert Config.from_env({"CONTENT_DIR": str(tmp_path), "COLORING_DIR": ""}).coloring_path == tmp_path / "coloring"
     assert Config.from_env({"COLORING_DIR": str(tmp_path / "pages")}).coloring_path == tmp_path / "pages"
     assert Config.from_env({"COLORING_DIR": "pages"}).coloring_path == ROOT / "pages"
+

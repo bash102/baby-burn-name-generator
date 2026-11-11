@@ -75,6 +75,15 @@ def test_add_question_appears_in_quiz(k):
     assert [o["correct"] for o in q["options"]] == [True, False]
 
 
+def test_add_single_question_with_two_correct_options(k):
+    r = post(k, "/admin/add", data={"kind": "questions", "type": "single", "prompt": "Best hat?", "opt_a": "Fur",
+                                    "correct_a": "on", "opt_b": "Feathers", "correct_b": "on", "opt_c": "None"})
+    assert r.status_code == 302 and "Added" in r.headers["Location"]
+    k.state.rng.sample = lambda pop, n: list(pop)[-n:]  # newest questions
+    q = next(q for q in k.c.get("/api/quiz").get_json()["questions"] if q["prompt"] == "Best hat?")
+    assert q["type"] == "single" and [o["correct"] for o in q["options"]] == [True, True, False]
+
+
 def test_add_name_and_tagline(k):
     post(k, "/admin/add", data={"kind": "names", "name": "New Tot", "tags": "Dust, gnome"})
     post(k, "/admin/add", data={"kind": "taglines", "text": "Fresh dust"})

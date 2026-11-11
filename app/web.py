@@ -100,6 +100,8 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         cloud.upload(s.token, original=s.photo)
 
     def on_dusty(s: Session, jpeg: bytes) -> None:
+        if s.deleted:  # guest deleted it (Delete, Start over, idle) while the transform ran: keep nothing
+            return  # (upload() and save_dusty() also skip deleted tokens, for a delete that lands mid-hook)
         try:  # a local-disk hiccup must not fail the guest's transform
             photos.save_dusty(s.token, jpeg)
             if s.choice == "album":

@@ -573,6 +573,20 @@ def test_album_twice_is_ok(k):
     k.choose(sid, "album")
 
 
+def test_late_dusty_after_delete_is_not_stored(tmp_path, sample_content_dir):
+    slow = Slow()
+    k = Kiosk(tmp_path, sample_content_dir, provider=slow)
+    sid = k.session()
+    s = k.sess(sid)
+    tok, fut = s.token, s.transform_future
+    k.choose(sid, "delete")  # Start over / idle before the badge, while the transform still runs
+    slow.release.set()
+    fut.result(5)
+    k.state.cloud.drain()
+    assert k.keys(tok) == {f"p/{tok}"} and "deleted" in k.page(tok)
+    assert not (k.cfg.data_dir / "photos" / tok).exists()
+
+
 def test_delete_drops_session_photo(k):
     sid = k.session()
     k.drain()
@@ -850,6 +864,16 @@ def test_quiz_payload_has_retention_days(tmp_path, sample_content_dir):
     from app.photos import RETENTION_DAYS
     k = Kiosk(tmp_path, sample_content_dir)
     assert k.c.get("/api/quiz").get_json()["retention_days"] == RETENTION_DAYS
+
+
+def test_kiosk_js_syntax():
+    import pathlib, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    js = pathlib.Path(__file__).resolve().parent.parent / "app" / "static" / "kiosk.js"
+    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_setup_r2_parses():
