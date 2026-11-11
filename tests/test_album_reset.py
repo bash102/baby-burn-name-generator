@@ -57,6 +57,8 @@ def test_album_photo_opens_full_size_dusty_with_original_link():
     from app.photos import render_album_page
     page = render_album_page([("tok1", "Glitter <Baby>")], "https://x/album/s")
     assert "<a href='https://x/album/s/tok1/dusty.jpg'><img src='https://x/album/s/tok1/dusty.jpg'" in page
+    assert page.index("</h1>") < page.index("Tap a photo") < page.index("class=grid")
+    assert "Tap a photo" not in render_album_page([], "https://x/album/s")
     assert "<a class=orig href='https://x/album/s/tok1/original.jpg'>Original</a>" in page
     assert "this.parentNode.href='https://x/album/s/tok1/original.jpg'" in page  # no dusty: link follows the fallback
     assert "Glitter &lt;Baby&gt;" in page

@@ -207,15 +207,15 @@ def render_album_page(entries: list[tuple[str, str]], base_url: str) -> str:
     for token, name in entries:
         d, o = (html.escape(f"{base_url}/{token}/{k}.jpg") for k in ("dusty", "original"))
         # tap: the full-size dusty baby; no dusty (never developed): picture and link fall back to the original
-        figs.append(f"<figure><a href='{d}'><img src='{d}' alt='' loading=lazy "
+        figs.append(f"<figure><a href='{d}'><img src='{d}' alt='{html.escape(name)}' loading=lazy "
                     f"onerror=\"this.onerror=null;this.src='{o}';this.parentNode.href='{o}'\"></a>"
                     f"<figcaption>{html.escape(name)} <a class=orig href='{o}'>Original</a></figcaption></figure>")
     grid = "".join(figs) or "<p class=note>No photos yet. Be the first!</p>"
     style = ("<style>.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}"
-             "figure{margin:0}figcaption{font-weight:700}.orig{font-weight:400;font-size:.85em}</style>"
-             "<p class=note>Tap a photo for the full-size dusty baby; press and hold it to save.</p>")
+             "figure{margin:0}figcaption{font-weight:700}.orig{font-weight:400;font-size:.85em;padding:6px 4px}</style>")
+    note = "<p class=note>Tap a photo for the full-size dusty baby; press and hold it to save.</p>" if figs else ""
     title = f"{EVENT_NAME} Album"
-    return _doc(title, f"{style}<h1>{title}</h1><div class=grid>{grid}</div>")
+    return _doc(title, f"{style}<h1>{title}</h1>{note}<div class=grid>{grid}</div>")
 
 
 # ---------- cloud ----------
