@@ -476,3 +476,85 @@ def test_add_form_maxlength_matches_content_caps(k, kind, caps):
     page = k.c.get(f"/admin/review?kind={kind}", headers=AUTH).data.decode()
     for cap in caps:
         assert f'maxlength="{getattr(content, cap)}"' in page, cap
+
+
+# --- photo removal ---
+
+def _guest(k, choice):
+    sid = k.session()
+    k.drain()
+    tok = k.sess(sid).token
+    k.finish(sid)
+    k.choose(sid, choice)
+    k.drain()
+    return tok
+
+
+def _gone_everywhere(k, tok):
+    assert k.keys(tok) == {f"p/{tok}"}
+    assert tok not in k.album_page()
+    assert "This photo has been deleted." in k.page(tok)
+    assert not (k.cfg.data_dir / "photos" / tok).exists()
+    assert not list((k.cfg.data_dir / "album").glob(f"*-{tok}-*.jpg"))
+
+
+def test_admin_removes_album_photo(k):
+    tok = _guest(k, "album")
+    assert list((k.cfg.data_dir / "album").glob(f"*-{tok}-*.jpg"))
+    page = k.c.get("/admin/photos", headers=AUTH).data.decode()
+    assert f"/album/sekret-album-key-16/{tok}/dusty.jpg" in page and "data-confirm" in page
+    r = post(k, "/admin/photo-delete", json={"token": tok})
+    assert r.status_code == 200 and r.get_json() == {"ok": True}
+    k.drain()
+    _gone_everywhere(k, tok)
+    assert tok not in k.c.get("/admin/photos", headers=AUTH).data.decode()
+
+
+def test_admin_removes_private_photo_from_reprints(k):
+    tok = _guest(k, "done")
+    page = k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    assert f"{{&#34;token&#34;: &#34;{tok}&#34;}}" in page and "data-confirm" in page
+    assert post(k, "/admin/photo-delete", json={"token": tok}).status_code == 200
+    k.drain()
+    _gone_everywhere(k, tok)
+
+
+def test_reprints_without_photo_has_no_delete_button(k):
+    k.finish(k.session(photo=False))
+    assert "photo-delete" not in k.c.get("/admin/reprints", headers=AUTH).data.decode()
+
+
+def test_photo_delete_validates(k):
+    tok = _guest(k, "done")
+    assert k.c.post("/admin/photo-delete", json={"token": tok}).status_code == 401
+    for bad in ("x", "../" + tok[3:], 5, None, tok + "a"):
+        r = post(k, "/admin/photo-delete", json={"token": bad})
+        assert r.status_code == 400 and "error" in r.get_json(), bad
+    r = post(k, "/admin/photo-delete", json={"token": "A" * 22})
+    assert r.status_code == 404 and "error" in r.get_json()
+    assert f"tmp/{tok}/original.jpg" in k.keys()  # the refusals removed nothing
+
+
+def test_when_shows_local_date_and_time(k, monkeypatch):
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        assert admin.when("2026-11-15T02:05:09.123+00:00") == "Sat Nov 14, 9:05 PM"
+        assert admin.when("2026-11-14T16:30:00+00:00") == "Sat Nov 14, 11:30 AM"
+        assert admin.when("") == "" and admin.when(None) is None and admin.when("junk") == "junk"
+        k.finish(k.session(photo=False))
+        assert admin.when(k.state.names.badges()[0]["ts"]) in k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_photo_delete_reports_cloud_failure(k, monkeypatch):
+    tok = _guest(k, "album")
+
+    def down(**kw):
+        raise OSError("down")
+
+    monkeypatch.setattr(k.s3, "delete_objects", down)
+    r = post(k, "/admin/photo-delete", json={"token": tok})
+    assert r.status_code == 502 and "error" in r.get_json()

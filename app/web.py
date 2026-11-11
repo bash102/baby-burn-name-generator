@@ -7,7 +7,6 @@ import socket
 import threading
 import time
 import uuid
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
@@ -46,8 +45,19 @@ class AppState:
     photos: PhotoStore
     cloud: CloudPhotos
     content_error: str | None = None
-    tuning: deque = field(default_factory=lambda: deque(maxlen=10))  # last guests' match inputs; memory only
     rng: random.Random = field(default_factory=random.SystemRandom)
+
+    def delete_photo(self, token: str) -> bool:
+        """A guest's Delete (or the owner's admin Remove): both cloud images, the photo page (now "deleted"),
+        the album entry and page, local copies and album backups. True once the cloud copy is confirmed gone."""
+        fut = self.cloud.delete(token)
+        self.photos.delete(token)
+        try:  # privacy: only say ok once the cloud copy is really gone
+            fut.result(timeout=CLOUD_WAIT_S)
+            return True
+        except Exception:
+            log.warning("cloud delete not confirmed for %s", token[:6] + "…")
+            return False
 
     def reload_content(self) -> None:
         try:
@@ -220,12 +230,7 @@ def create_app(cfg: Config, *, printer=None, provider=None, now=time.monotonic, 
         s.choice = choice
         if s.token and choice == "delete":
             s.deleted, s.photo, s.transform_future, s.tag_future = True, None, None, None
-            fut = cloud.delete(s.token)
-            photos.delete(s.token)
-            try:  # privacy: only say ok once the cloud copy is really gone
-                fut.result(timeout=CLOUD_WAIT_S)
-            except Exception:
-                log.warning("cloud delete not confirmed for %s", s.token[:6] + "…")
+            if not st.delete_photo(s.token):
                 return jsonify(ok=False), 502
         return jsonify(ok=True)
 
@@ -279,9 +284,7 @@ def _finish(st: AppState, s: Session, chosen: dict[str, set[str]]) -> dict:
             tags |= photo_tags
             photo_state = "ready"
 
-    explain: dict = {}
-    name_id, display = st.names.pick(tags, st.rng, looks=looks, words=words, photo_state=photo_state, explain=explain)
-    st.tuning.append({"looks": sorted(looks), "words": sorted(words), "tags": sorted(tags), **explain})
+    name_id, display = st.names.pick(tags, st.rng, looks=looks, words=words, photo_state=photo_state)
     lines = st.content.approved_taglines
     tagline = st.rng.choice(lines).text if lines else ""
     photo_url = st.cloud.url(s.token) if s.token else None

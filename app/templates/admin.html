@@ -32,7 +32,7 @@ form.ed .f>label>span{flex:none;min-width:4.5em;font-size:13px;color:#5a4a3a}
 form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 </style></head><body>
 <header><a href="/admin">Dashboard</a><a href="/admin/review?kind=names">Names</a>
-<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a><a href="/admin/matching">Matching</a><a href="/admin/reprints">Reprint</a>
+<a href="/admin/review?kind=questions">Questions</a><a href="/admin/review?kind=taglines">Taglines</a><a href="/admin/matching">Matching</a><a href="/admin/reprints">Reprint</a><a href="/admin/photos">Photos</a>
 <div id="flash" class="banner err" hidden></div></header>
 <main>
 {% if sample_banner %}<div class="banner err">{{ sample_banner }}</div>{% endif %}
@@ -66,7 +66,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 <p><button data-post="/admin/test-print">Test print</button> <button data-post="/admin/test-coloring">Test coloring page</button>
 Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} guests, {% if coloring_pool %}{{ coloring_pool }} page{{ "s" if coloring_pool != 1 }} in pool{% else %}pool empty (inactive){% endif %}{% else %}off{% endif %}</p>
 <p><a href="/admin/reprints">Reprint a badge</a> (search every badge since the last reset; failed prints listed first)</p>
-<h2>Tuning (last {{ tuning|length }} guests, cleared on restart)</h2>
+<h2>Tuning (last {{ tuning|length }} guests)</h2>
 <table><tr><th>photo looks</th><th>answer words</th><th>tags</th><th>name (score)</th><th>next best</th></tr>
 {% for t in tuning %}<tr><td>{{ t.looks|join(", ") }}</td><td>{{ t.words|join(", ") }}</td><td>{{ t.tags|join(", ") }}</td>
 <td><b>{{ t.name }}</b> ({{ t.score }})</td><td>{% for n, sc in t.alts %}{{ n }} ({{ sc }}){{ ", " if not loop.last }}{% endfor %}</td></tr>
@@ -90,19 +90,31 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% for w, d, sup, low in m.supply_demand %}<tr class="{{ 'low' if low }}"><td>{{ w }}</td><td>{{ d }}</td><td>{{ sup }}</td></tr>{% endfor %}</table>
 <h2>Look words never detected</h2><p>{% for w in m.never %}<span class="tag w">{{ w }}</span>{% else %}All detected at least once.{% endfor %}</p>
 {% if m.total %}<h2>Most recent 20</h2>
-<table><tr><th>time (UTC)</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
-{% for r in m.recent %}<tr><td>{{ r.ts[11:19] }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
+<table><tr><th>time</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
+{% for r in m.recent %}<tr><td>{{ r.ts|when }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
 <td>{{ r.display }}</td><td>{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table>{% endif %}
 
 {% elif page == "reprints" %}
 <h1>Reprint a badge</h1>
 <form class="filters" method="get"><input name="q" value="{{ q }}" placeholder="name contains…" autofocus> <button>Search</button>
 {% if q %}<a href="/admin/reprints">clear</a>{% endif %} <b>{{ badges|length }}</b> shown</form>
-<table><tr><th>time (UTC)</th><th>name</th><th>tagline</th><th>printed?</th><th></th></tr>
-{% for b in badges %}<tr><td>{{ b.ts[11:19] }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
+<table><tr><th>time</th><th>name</th><th>tagline</th><th>printed?</th><th></th></tr>
+{% for b in badges %}<tr><td>{{ b.ts|when }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
 <td>{% if b.printed %}yes{% else %}<span class="low">not printed</span>{% endif %}</td>
-<td><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button></td></tr>
+<td><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button>
+{% if b.photo_url %}<button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": b.photo_url.rsplit("/", 1)[-1]}|tojson|forceescape }}'
+data-confirm="Delete the photo of {{ b.display }} everywhere (album too)? This cannot be undone.">Delete photo</button>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">{{ "No badge name matches." if q else "No badges yet." }}</td></tr>{% endfor %}</table>
+
+{% elif page == "photos" %}
+<h1>Album photos</h1>
+<p>{{ entries|length }} in the album. Remove takes a photo out everywhere, like the guest's own Delete. Private photos: <a href="/admin/reprints">Reprint</a> › Delete photo.</p>
+{% for token, name in entries %}<div class="row"><img loading="lazy" alt="" src="{{ album_base }}/{{ token }}/dusty.jpg"
+data-o="{{ album_base }}/{{ token }}/original.jpg" onerror="this.onerror=null;this.src=this.dataset.o">
+<div class="body"><b>{{ name }}</b></div>
+<div class="acts"><button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": token}|tojson|forceescape }}'
+data-confirm="Remove the photo of {{ name }} from the album and delete it everywhere? This cannot be undone.">Remove</button></div></div>
+{% else %}<p>No album photos yet.</p>{% endfor %}
 
 {% else %}
 <h1>Review {{ kind }}</h1>
@@ -153,10 +165,12 @@ const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type"
   body: JSON.stringify(body || {})}).then(async r => {
     const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; });
 document.querySelectorAll("[data-post]").forEach(b => b.onclick = () => {
+  if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
   b.disabled = true;  // one tap, one request: a double tap on Reprint would print twice
   post(b.dataset.post, b.dataset.body && JSON.parse(b.dataset.body)).then(() => {
     flash(""); if (/provider$|update\/(pause|resume)$/.test(b.dataset.post)) location.reload();
     else if (/update\/sync$/.test(b.dataset.post)) flash("Update started — the kiosk restarts if there's a new version; check status in a minute", true);
+    else if (b.dataset.confirm && b.closest(".row")) b.closest(".row").classList.add("gone");  // removed album photo
     else b.textContent += " ✓";
   }).catch(e => flash("Failed: " + e.message)).finally(() => { b.disabled = false; }); });
 const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};

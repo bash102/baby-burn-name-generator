@@ -241,19 +241,25 @@ def _kiosk(tmp_path, d, **kw):
     return k
 
 
-def test_photo_look_steers_name_and_tuning_is_memory_only(tmp_path, sample_content_dir):
+def _tuning(k):
+    html = k.c.get("/admin", headers=AUTH).data.decode()
+    return html.split("<h2>Tuning", 1)[1].split("</table>", 1)[0]
+
+
+def test_photo_look_steers_name_and_tuning_survives_restart(tmp_path, sample_content_dir):
     k = _kiosk(tmp_path, sample_content_dir, provider=T.FakeProvider(0, looks={"goggles"}))
     sid = k.session()
     k.drain()
     r = k.finish(sid, [{"question_id": "sunrise", "option_ids": ["c"]}])
     assert r["name"] == "Goggle Eyes"
-    t = k.state.tuning[-1]
-    assert t["looks"] == ["goggles"] and t["words"] == ["sleepy"] and t["tags"] == ["beast"]
-    assert t["name"] == "Goggle Eyes" and t["score"] == PHOTO_WEIGHT and len(t["alts"]) == 3 and t["alts"][0] == ("Sleepy Sasquatch", 2)
+    row = (f"<tr><td>goggles</td><td>sleepy</td><td>beast</td>\n<td><b>Goggle Eyes</b> ({PHOTO_WEIGHT})</td>"
+           "<td>Sleepy Sasquatch (2), ")
+    assert row in _tuning(k)
+    assert row in _tuning(_kiosk(tmp_path, sample_content_dir))  # read from match_log: a restart keeps it
     for _ in range(11):
         k.finish(k.session(photo=False))
-    assert len(k.state.tuning) == 10
-    assert len(_kiosk(tmp_path, sample_content_dir).state.tuning) == 0  # a restart clears it
+    t = _tuning(k)
+    assert "last 10 guests" in t and t.count("<tr>") == 11 and "goggles" not in t  # header + newest 10
 
 
 def test_dashboard_shows_tuning(tmp_path, sample_content_dir):

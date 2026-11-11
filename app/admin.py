@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 from collections import Counter
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -50,6 +51,16 @@ def _limits():
     """The Add and Edit forms' maxlength values: the same caps the content validator enforces."""
     return {"limits": {"max_name": MAX_NAME, "max_tagline": MAX_TAGLINE, "max_option": MAX_OPTION,
                        "max_quip": MAX_QUIP, "max_prompt": MAX_PROMPT}}
+
+
+@bp.app_template_filter("when")
+def when(ts) -> str:
+    """A stored UTC ISO time in the Pi's local zone, e.g. "Sat Nov 14, 9:05 PM"; anything unparsable as is."""
+    try:
+        d = datetime.fromisoformat(ts).astimezone()
+    except (TypeError, ValueError):
+        return ts
+    return f"{d:%a %b} {d.day}, {d.hour % 12 or 12}:{d:%M %p}"
 
 
 @bp.before_request
@@ -185,7 +196,15 @@ def dashboard():
         providers=sorted(PROVIDERS),
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
         updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"),
-        tuning=list(st.tuning)[::-1])
+        tuning=_tuning(st.names.match_rows()[-10:][::-1], {n.id: n.name for n in st.content.names}))
+
+
+def _tuning(rows: list[dict], names: dict[str, str]) -> list[dict]:
+    """The dashboard's last guests, newest first, from match_log rows; top3 stores ids, shown as names."""
+    return [{"looks": json.loads(r["looks"]), "words": json.loads(r["answer_words"]), "tags": json.loads(r["tags"]),
+             "name": r["display"], "score": r["score"],
+             "alts": [(names.get(a["name_id"], a["name_id"]), a["score"]) for a in json.loads(r["top3"] or "[]")]}
+            for r in rows]
 
 
 SUPPLY_LOW = 2  # a detected look word with this few unused names left is flagged
@@ -417,6 +436,30 @@ def _print(img, on_ok=None):
 def reprints():
     st, q = _st(), request.args.get("q", "")
     return render_template("admin.html", page="reprints", st=st, q=q, badges=st.names.badges(q))
+
+
+@bp.get("/photos")
+def photos():
+    st = _st()
+    return render_template("admin.html", page="photos", st=st, entries=st.cloud.album.entries(),
+                           album_base=st.cloud.album_url().rsplit("/", 1)[0])
+
+
+TOKEN = re.compile(r"[A-Za-z0-9_-]{22}")  # secrets.token_urlsafe(16), the photo URL's last segment
+
+
+@bp.post("/photo-delete")
+def photo_delete():
+    st, token = _st(), _body().get("token")
+    if not isinstance(token, str) or not TOKEN.fullmatch(token):
+        return jsonify(error="token must be a photo token"), 400
+    # ponytail: full badge scan; fine for the hundreds a party makes.
+    if token not in dict(st.cloud.album.entries()) and not any(
+            (b["photo_url"] or "").rsplit("/", 1)[-1] == token for b in st.names.badges()):  # survives a base URL change
+        return jsonify(error="no such photo"), 404
+    if not st.delete_photo(token):
+        return jsonify(error="cloud delete not confirmed; try again"), 502
+    return jsonify(ok=True)
 
 
 @bp.post("/reprint")
