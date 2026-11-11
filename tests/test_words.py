@@ -12,7 +12,7 @@ import yaml
 import app.transform as T
 from app.config import Config
 from app.content import ContentError, append_entry, load_content, update_entry
-from app.names import NameStore
+from app.names import ANSWER_CAP, PHOTO_WEIGHT, TAG_CAP, NameStore
 from test_admin import AUTH, PIN, post
 from test_web import Kiosk, jpeg
 
@@ -172,6 +172,14 @@ def test_photo_beats_answer_cap(tmp_path):
     assert picks(s, looks={"pink"}, words={"sleepy", "cozy", "chaotic"}, tags={"gnome"}) == ["photo"]
 
 
+def test_one_photo_match_beats_maxed_answers_and_tags(tmp_path):
+    assert PHOTO_WEIGHT > ANSWER_CAP + TAG_CAP
+    for i in range(20):  # a fresh store each time: a pick uses its name up
+        s = store(tmp_path / str(i), N("photo", "P", words=frozenset({"pink"})),
+                  N("rest", "R", tags=frozenset({"gnome"}), words=frozenset({"sleepy", "cozy"})))
+        assert s.pick({"gnome"}, random.Random(i), looks={"pink"}, words={"sleepy", "cozy"})[0] == "photo"
+
+
 def test_answer_cap(tmp_path):
     s = store(tmp_path, N("two", "2", tags=frozenset({"gnome"}), words=frozenset({"sleepy", "cozy"})),
               N("three", "3", words=frozenset({"sleepy", "cozy", "chaotic"})))
@@ -232,7 +240,7 @@ def test_photo_look_steers_name_and_tuning_is_memory_only(tmp_path, sample_conte
     assert r["name"] == "Goggle Eyes"
     t = k.state.tuning[-1]
     assert t["looks"] == ["goggles"] and t["words"] == ["sleepy"] and t["tags"] == ["beast"]
-    assert t["name"] == "Goggle Eyes" and t["score"] == 3 and len(t["alts"]) == 3 and t["alts"][0] == ("Sleepy Sasquatch", 2)
+    assert t["name"] == "Goggle Eyes" and t["score"] == PHOTO_WEIGHT and len(t["alts"]) == 3 and t["alts"][0] == ("Sleepy Sasquatch", 2)
     for _ in range(11):
         k.finish(k.session(photo=False))
     assert len(k.state.tuning) == 10
@@ -283,7 +291,7 @@ def test_match_log_row_per_finish(tmp_path, sample_content_dir):
     assert (r["photo_state"], json.loads(r["looks"]), json.loads(r["answer_words"]), json.loads(r["tags"])) == (
         "ready", ["goggles"], ["sleepy"], ["beast"])
     assert (r["name_id"], r["display"], r["score"], r["photo_pts"], r["answer_pts"], r["tag_pts"], r["decided_by"]) == (
-        "goggle-eyes", "Goggle Eyes", 3, 3, 0, 0, "photo")
+        "goggle-eyes", "Goggle Eyes", PHOTO_WEIGHT, PHOTO_WEIGHT, 0, 0, "photo")
     top3 = json.loads(r["top3"])
     assert len(top3) == 3 and top3[0] == {"name_id": "sleepy-sasquatch", "score": 2}
     assert [(r["photo_state"], r["decided_by"], r["tag_pts"]) for r in rows[1:]] == [

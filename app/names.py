@@ -13,8 +13,8 @@ from app.content import RESERVED_NAME_PREFIX
 
 log = logging.getLogger(__name__)
 
-# Photo dominates: one photo look match (3) beats the answer-word cap (2) and ties answers + tag (2 + 1).
-PHOTO_WEIGHT, ANSWER_CAP, TAG_CAP = 3, 2, 1
+# Photo dominates (owner's call): one photo look match (4) outscores the most answers + tags can add (2 + 1).
+PHOTO_WEIGHT, ANSWER_CAP, TAG_CAP = 4, 2, 1
 
 # One row per badge for event-wide tuning. Words and scores only: never the photo, its token/URL or a session id.
 MATCH_LOG_COLS = ("ts", "photo_state", "looks", "answer_words", "tags", "name_id", "display", "score",
