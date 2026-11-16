@@ -61,7 +61,7 @@ button.no{color:var(--red);border-color:var(--red)}button.no:hover{background:#f
 .tag.w{background:#e3ecf7;color:#1f3f66;border-color:#bccde3;border-radius:10px}
 .tag.low{background:#fbe3df;color:#9b2418;border-color:#e6a59b}
 .chips .tag,.row .tags .tag,.row .words .tag{margin:0}.opts li{margin:3px 0}
-.legend{font-size:13px;color:var(--muted);margin:4px 0 10px}.legend .tag{margin:0 4px 0 0}.legend .tag+.tag{margin-left:0}
+.legend{font-size:13px;color:var(--muted);margin:4px 0 10px}.legend .tag{margin:0 4px 0 0}
 .note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:var(--green)}
 form.filters{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:10px 0}
 form.filters label{display:inline-flex;gap:6px;align-items:center}
@@ -127,7 +127,7 @@ form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}</span></p></section>
 <section class="card"><h2>Transform provider</h2>
 <p>Now: <b id="prov">{{ st.provider_name }}</b> <span class="hint">(resets to the .env value on restart)</span></p>
-<p class="act">{% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'{% if p == st.provider_name %} class="on" aria-pressed="true"{% endif %}>{{ p }}</button>{% endfor %}</p></section>
+<p class="act">{% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'{% if p == st.provider_name %} class="on" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>{{ p }}</button>{% endfor %}</p></section>
 <section class="card"><h2>Printing</h2>
 <p class="act"><button data-post="/admin/test-print">Test print</button><button data-post="/admin/test-coloring">Test coloring page</button></p>
 <p>Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} guests, {% if coloring_pool %}{{ coloring_pool }} page{{ "s" if coloring_pool != 1 }} in pool{% else %}pool empty (inactive){% endif %}{% else %}off{% endif %}</p>
@@ -180,7 +180,7 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% for w, d, sup, low in sd_seen %}<tr class="{{ 'low' if low }}"><td>{{ w }}</td><td>{{ d }}</td><td>{{ sup }}</td></tr>{% endfor %}</table></div>
 {% else %}<p class="empty">No look word detected yet.</p>{% endif %}
 {# the demand-0 rows are exactly m.never: one collapsed list (word, supply) instead of two long ones #}
-{% if sd_unseen %}<details><summary>Look words never detected: {{ sd_unseen|length }} (with supply)</summary>
+{% if sd_unseen %}<details><summary>Look words never detected: {{ sd_unseen|length }} (number = unused names with that word)</summary>
 <ul class="cols">{% for w, d, sup, low in sd_unseen %}<li>{{ w }} <span>{{ sup }}</span></li>{% endfor %}</ul></details>
 {% else %}<p>All look words detected at least once.</p>{% endif %}</section>
 {% if m.total %}<section class="card"><h2>Most recent 20</h2>
