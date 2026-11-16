@@ -44,9 +44,11 @@ const COPY = {
 // Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
 const IDLE_MS = 40000, IDLE_LONG_MS = 90000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
-const FETCH_MS = 10000;   // per try; matches the server's SOCKET_TIMEOUT_S
+const FETCH_MS = 10000;   // per try: a ~300 KB photo needs only ~0.25 Mbit/s to make it
 const FINISH_TRY_MS = 20000;   // /finish prints the badge (and maybe a coloring page) before it answers: ~3-7 s, more if the
-                              // printer is slow to confirm. Worst case 4 tries + back-off = 83.5 s < IDLE_LONG_MS
+                              // printer is slow to confirm. The /finish call alone is at most 4 tries + back-off = 83.5 s; with
+                              // a hung photo upload first the finish wait can pass IDLE_LONG_MS, and the idle reset drops
+                              // the guest safely (epoch check).
 const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
 const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page;
                                                  // &slowsession / &failsession: the photo upload (POST /api/session) takes 8 s / fails
