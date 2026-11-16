@@ -898,6 +898,33 @@ def test_kiosk_js_syntax():
     assert r.returncode == 0, r.stderr
 
 
+# Runs kiosk.js in node against a fetch that never answers (a dead network), with a catch-all fake DOM
+# and timers up to 20 s fired at once. api() must give up; before the fix it hung, and every idle reset
+# queued another hung request that iOS later sent all at once.
+_HUNG_FETCH_JS = r"""
+const vm = require("vm"), fs = require("fs");
+const any = new Proxy(function () {}, { get: (t, k) => k === "then" ? undefined : k === Symbol.toPrimitive ? () => "" : any,
+  apply: () => any, construct: () => any, set: () => true });
+const ctx = { document: any, location: { search: "" }, URL: any, FormData: any, Response: any, navigator: any,
+  URLSearchParams, AbortController, addEventListener() {}, setInterval() {}, clearTimeout,
+  setTimeout: (f, ms) => ms > 20000 ? 0 : setTimeout(f, 0),
+  fetch: (p, o) => new Promise((_, no) => o && o.signal && o.signal.addEventListener("abort", () => no(new Error("aborted")))) };
+vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), ctx);
+Promise.all(["/api/quiz", "/api/session"].map(p => ctx.api(p, { method: p === "/api/session" ? "POST" : "GET" })
+  .then(() => "resolved", () => "gave up"))).then(r => console.log(r.join(",")));
+"""
+
+
+def test_kiosk_requests_give_up_on_a_dead_network():
+    import pathlib, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    js = pathlib.Path(__file__).resolve().parent.parent / "app" / "static" / "kiosk.js"
+    r = subprocess.run([node, "-e", _HUNG_FETCH_JS, str(js)], capture_output=True, text=True, timeout=30)
+    assert r.stdout.strip() == "gave up,gave up", r.stdout + r.stderr
+
+
 def test_setup_r2_parses():
     import pathlib, subprocess
     root = pathlib.Path(__file__).resolve().parent.parent
