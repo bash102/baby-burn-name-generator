@@ -102,7 +102,8 @@ Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} gue
 {% for b in badges %}<tr><td>{{ b.ts|when }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
 <td>{% if b.printed %}yes{% else %}<span class="low">not printed</span>{% endif %}</td>
 <td><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button>
-{% if b.photo_url %}<button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": b.photo_url.rsplit("/", 1)[-1]}|tojson|forceescape }}'
+{% if b.photo_url %}<a href="{{ b.photo_url }}" target="_blank" rel="noopener noreferrer">View photo</a>
+<button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": b.photo_url.rsplit("/", 1)[-1]}|tojson|forceescape }}'
 data-confirm="Delete the photo of {{ b.display }} everywhere (album too)? This cannot be undone.">Delete photo</button>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">{{ "No badge name matches." if q else "No badges yet." }}</td></tr>{% endfor %}</table>
 

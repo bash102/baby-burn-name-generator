@@ -514,6 +514,7 @@ def test_admin_removes_private_photo_from_reprints(k):
     tok = _guest(k, "done")
     page = k.c.get("/admin/reprints", headers=AUTH).data.decode()
     assert f"{{&#34;token&#34;: &#34;{tok}&#34;}}" in page and "data-confirm" in page
+    assert f'<a href="{k.state.cloud.url(tok)}" target="_blank" rel="noopener noreferrer">View photo</a>' in page
     assert post(k, "/admin/photo-delete", json={"token": tok}).status_code == 200
     k.drain()
     _gone_everywhere(k, tok)
@@ -521,7 +522,8 @@ def test_admin_removes_private_photo_from_reprints(k):
 
 def test_reprints_without_photo_has_no_delete_button(k):
     k.finish(k.session(photo=False))
-    assert "photo-delete" not in k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    page = k.c.get("/admin/reprints", headers=AUTH).data.decode()
+    assert "photo-delete" not in page and "View photo" not in page
 
 
 def test_photo_delete_validates(k):
