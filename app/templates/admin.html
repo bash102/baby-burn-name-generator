@@ -13,7 +13,8 @@ header nav a:hover{color:#fff}
 header nav a[aria-current=page]{color:#fff;border-bottom-color:var(--gold)}
 header nav a:first-child{margin-left:-10px}
 main{padding:8px 20px 40px;max-width:1100px;margin:auto}
-h1{font-size:26px;margin:18px 0 12px}h2{font-size:17px;margin:0 0 10px}
+h1{font-size:28px;font-weight:800;letter-spacing:-.01em;line-height:1.15;margin:18px 0 12px}h2{font-size:17px;margin:0 0 10px}
+h3{font-size:14px;margin:14px 0 4px}h3:first-of-type{margin-top:0}
 p{margin:8px 0;max-width:75ch}
 a{color:var(--link);text-underline-offset:2px}a:hover{text-decoration-thickness:2px}
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
@@ -21,7 +22,9 @@ header a:focus-visible{outline-color:var(--gold);outline-offset:-3px}
 .muted,.hint{color:var(--muted)}.hint{font-size:13px}
 .banner{padding:10px 14px;border-radius:6px;margin:10px 0;white-space:pre-wrap}
 .err{background:#fde2e2;border:1px solid #c0392b;color:#7b1d12}.warn{background:#fff3cd;border:1px solid #d4a017}.ok{background:#e3f4e1;border:1px solid #9cc79a}
-.low{color:var(--red);font-weight:700}
+.low{color:var(--red);font-weight:700}.few{color:var(--link);font-weight:600}
+.hero{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap}.hero h2{margin:0}
+.hero .big{font-size:40px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 14px;min-width:0}
 .grid{display:grid;gap:0 14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))}
 .tw{overflow-x:auto;margin:6px 0}
@@ -38,61 +41,79 @@ tr.low td{color:var(--red)}
 .cols li span{font-variant-numeric:tabular-nums;color:var(--muted)}
 .empty{color:var(--muted);font-style:italic}
 details{margin:10px 0}summary{cursor:pointer;color:var(--link);font-weight:600;padding:4px 0}
-.row{display:flex;gap:14px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--card)}
-.row.needs{background:#fff6dd;border-left:5px solid #e08a00}.row.fav{border-left:5px solid var(--green)}
+/* review/photo rows: one flush ledger list inside a single .card */
+.list{padding:0;overflow:hidden}
+.row{display:flex;gap:14px;align-items:flex-start;padding:10px 12px;border-top:1px solid var(--line)}.list>.row:first-child{border-top:0}
+.row.needs{background:#fff6dd;box-shadow:inset 4px 0 #e08a00}.row.fav{box-shadow:inset 4px 0 var(--green)}
 .row.gone{display:none}
-.row img{width:190px;height:auto;border:1px solid #ccc;flex:none}.row .body{flex:1;min-width:0}
+.row img{width:190px;height:auto;border:1px solid var(--line);flex:none}.row .body{flex:1;min-width:0}
 .row .t{font-size:16px}
 .row .tags,.row .words{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}
 .row .tags:empty,.row .words:empty{display:none}
 .row .tags::before,.row .words::before{content:"tags";font-size:12px;color:var(--muted);min-width:3.5em}
 .row .words::before{content:"words"}
 .row .acts{display:flex;gap:6px;flex:none}
-.st{display:table;margin-top:8px;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;background:#f3ece0;color:var(--muted);border:1px solid var(--line)}
+.st{display:inline-block;vertical-align:2px;margin-left:6px;font-size:12px;font-weight:600;line-height:1.4;padding:0 8px;border-radius:10px;background:#f3ece0;color:var(--muted);border:1px solid var(--line)}
+.list[data-filter=draft] .row[data-status=draft] .st,.list[data-filter=approved] .row[data-status=approved] .st,
+.list[data-filter=rejected] .row[data-status=rejected] .st{display:none}/* the filter already says it */
 .row[data-status=approved] .st{background:#e3f4e1;color:#1e5a22;border-color:#9cc79a}
 .row[data-status=rejected] .st{background:#fbe3df;color:#9b2418;border-color:#e6a59b}
 button{font:inherit;line-height:1.2;min-height:36px;padding:6px 14px;border-radius:6px;border:1px solid #b9a88f;background:var(--card);color:var(--ink);cursor:pointer}
 button:hover{background:#f3ece0}
-button.yes,button.on{background:var(--green);color:#fff;border-color:var(--green)}button.yes:hover{background:#256a29}
-button.on{background:var(--ink);border-color:var(--ink)}
-button.no{color:var(--red);border-color:var(--red)}button.no:hover{background:#fbe3df}
-.row[data-status=approved] .yes,.row[data-status=rejected] .no{outline:3px solid var(--ink);outline-offset:1px}
+button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+button.yes{background:var(--card);color:var(--green);border-color:var(--green)}button.yes:hover{background:#eef8ed}
+button.no{background:var(--card);color:var(--red);border-color:var(--red)}button.no:hover{background:#fbe3df}
+/* only the row's current state is filled */
+.row[data-status=approved] .yes{background:var(--green);color:#fff}.row[data-status=approved] .yes:hover{background:#256a29}
+.row[data-status=rejected] .no{background:var(--red);color:#fff}.row[data-status=rejected] .no:hover{background:#8f2a1a}
 .tag{display:inline-block;white-space:nowrap;background:#f3ece0;color:var(--ink);border:1px solid #e0d3bd;border-radius:4px;padding:0 7px;margin-right:4px;font-size:13px}
-.tag.w{background:#e3ecf7;color:#1f3f66;border-color:#bccde3;border-radius:10px}
-.tag.low{background:#fbe3df;color:#9b2418;border-color:#e6a59b}
+.tag.w{background:#fbf0d6;color:#5c4210;border-color:#ecd49a;border-radius:10px}
+.tag.low{background:#fbe3df;color:#9b2418;border-color:#e6a59b}.tag.few{color:var(--link);border-color:#dcc2a6}
 .chips .tag,.row .tags .tag,.row .words .tag{margin:0}.opts li{margin:3px 0}
 .legend{font-size:13px;color:var(--muted);margin:4px 0 10px}.legend .tag{margin:0 4px 0 0}
-.note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:var(--green)}
+.note{color:#8a5a00;font-style:italic}.correct{font-weight:700;color:var(--green)}.correct .tag{font-weight:400}
+.r-nm{white-space:nowrap;font-weight:600}
+/* summary rows: a label column, then a small table; bars are pure CSS from --p (0-100) */
+dl.sum{display:grid;grid-template-columns:8em minmax(0,1fr);gap:10px 16px;margin:0}dl.sum dt{font-weight:600;padding-top:6px}dl.sum dd{margin:0}
+.bar{display:inline-block;width:8em;height:8px;border-radius:2px;background:linear-gradient(var(--focus),var(--focus)) no-repeat #f3ece0;background-size:calc(var(--p)*1%) 100%}
+td.b{vertical-align:middle}
 form.filters{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:10px 0}
 form.filters label{display:inline-flex;gap:6px;align-items:center}
 form.filters #all-yes{margin-left:auto}
 .act{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.badges .act{flex-wrap:nowrap}.badges td{vertical-align:middle}
+table.badges{width:100%}.badges .act{flex-wrap:nowrap}.badges td{vertical-align:middle}.badges .act button.no{margin-left:auto}
 .act a{display:inline-flex;align-items:center;min-height:36px;padding:0 6px}
 input,select,textarea{font:inherit;padding:5px 8px;min-height:36px;border:1px solid #b9a88f;border-radius:6px;background:#fff;color:var(--ink)}
 input[type=checkbox]{min-height:0;width:18px;height:18px;accent-color:var(--green)}
 #flash{margin:0 0 8px}
 @media (pointer:coarse){button,input:not([type=checkbox]),select,.act a{min-height:44px}}
 @media (max-width:600px){
-  header{padding:0 8px}header nav{display:grid;grid-template-columns:repeat(4,1fr)}
+main{padding-bottom:96px}  /* room for the bottom-pinned #flash so it never covers the last row */
+.row.editing img{display:none}  /* the edit form gets the full width */
+  header{padding:0 8px;position:static}/* two nav rows would eat the screen */
+  #flash{position:fixed;left:8px;right:8px;bottom:8px;z-index:3}header nav{display:grid;grid-template-columns:repeat(4,1fr)}
   header nav a{text-align:center;padding:9px 2px 6px;font-size:14px}header nav a:first-child{margin-left:0}
-  main{padding:4px 16px 32px}h1{font-size:22px}
-  .card{padding:12px}.row{flex-wrap:wrap}.row .body{flex-basis:100%}
+  main{padding:4px 16px 32px}h1{font-size:24px}
+  .card{padding:12px}.list{padding:0}dl.sum{grid-template-columns:1fr;gap:2px}dl.sum dd{margin-bottom:8px}
+  /* review: preview beside the details, actions on their own full-width line */
+  .row{flex-wrap:wrap;gap:8px 10px}.row img{width:112px}.row .body{flex:1 1 0}.row .t{font-size:17px}
+  .row .acts{flex:1 0 100%}.row .acts button{flex:1}
   form.filters select{flex:1 1 7em}form.filters #all-yes{margin-left:0}
   form.filters input[name=q]{flex:1 1 10em}
   table.wide{min-width:900px}/* scrolls inside .tw instead of squeezing to one word per line */
   /* reprint list: one card per badge so the actions stay on screen */
   table.badges,table.badges tbody,table.badges tr,table.badges td{display:block}
   table.badges tr:first-child{display:none}
-  table.badges tr{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;background:var(--card)}
+  table.badges tr{border-top:1px solid var(--line);padding:8px 0}table.badges tr:nth-child(2){border-top:0;padding-top:0}
   table.badges td{border:0;padding:2px 0}table.badges td:first-child{font-size:13px;color:var(--muted);text-align:left}
   table.badges{background:none}table.badges td:last-child{padding-top:8px}table.badges .act{flex-wrap:wrap}
 }
 button.save{background:var(--ink);color:#fff;border-color:var(--ink)}button:disabled{opacity:.5;cursor:default}
-form.ed{margin-top:8px;max-width:640px}form.ed .opt{border-left:3px solid #e5dccb;padding-left:8px;margin:8px 0}
+.row.editing .body>:not(form){display:none}/* the form replaces the read-only view */
+form.ed{max-width:640px}form.ed .opt{border-top:1px dashed var(--line);padding-top:4px;margin:8px 0}
 form.ed .f{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0}
-form.ed .f>label{display:flex;gap:6px;align-items:center;flex:1 1 14em}form.ed .f>label.chk{flex:none}
-form.ed .f>label>span{flex:none;min-width:4.5em;font-size:13px;color:#5a4a3a}
+form.ed .f>label{display:flex;gap:6px;align-items:center;flex:1 1 14em}form.ed .f>label.chk{flex:none;margin-right:12px}
+form.ed .f>label>span{flex:0 0 5.5em;font-size:13px;color:#5a4a3a}
 form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 </style></head><body>
 <header><nav aria-label="Admin">
@@ -114,25 +135,27 @@ form.ed .f input:not([type=checkbox]){flex:1;min-width:0}
 {% if page == "dashboard" %}
 <h1>Dashboard</h1>
 {% for w in st.content.warnings %}<div class="banner warn">{{ w }}</div>{% endfor %}
-<section class="card"><h2>Names remaining: <span class="{{ 'low' if remaining < low }}">{{ remaining }}</span></h2>
-<div class="chips">{% for t, n in by_tag %}<span class="tag {{ 'low' if n < low }}">{{ t }}: {{ n }}</span>{% endfor %}</div>
-<p class="legend"><span class="tag low">red</span> fewer than {{ low }} unused names left with that tag</p></section>
+<section class="card"><div class="hero"><h2>Names remaining</h2><span class="big {{ 'low' if remaining < low }}">{{ remaining }}</span></div>
+<div class="chips">{% for t, n in by_tag %}<span class="tag {{ 'low' if n < crit else 'few' if n < low }}">{{ t }}: {{ n }}</span>{% endfor %}</div>
+<p class="legend">Unused names left with that tag: <span class="tag low">red</span> fewer than {{ crit }},
+<span class="tag few">rust</span> fewer than {{ low }}</p></section>
 <div class="grid">
 <section class="card"><h2>Content</h2>
 <div class="tw"><table class="num"><tr><th></th><th>approved</th><th>draft</th><th>rejected</th></tr>
 {% for k, c in by_kind.items() %}<tr><td><a href="/admin/review?kind={{ k }}">{{ k }}</a></td>
 <td>{{ c.approved }}</td><td>{{ c.draft }}</td><td>{{ c.rejected }}</td></tr>{% endfor %}</table></div></section>
-<section class="card"><h2>Photos</h2>
-<p>Album: <a href="{{ album_url }}" target="_blank" rel="noopener">{{ album_url }}</a> ({{ album_count }} photos).
-Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}</span></p></section>
-<section class="card"><h2>Transform provider</h2>
-<p>Now: <b id="prov">{{ st.provider_name }}</b> <span class="hint">(resets to the .env value on restart)</span></p>
-<p class="act">{% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'{% if p == st.provider_name %} class="on" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>{{ p }}</button>{% endfor %}</p></section>
 <section class="card"><h2>Printing</h2>
 <p class="act"><button data-post="/admin/test-print">Test print</button><button data-post="/admin/test-coloring">Test coloring page</button></p>
 <p>Coloring bonus: {% if st.cfg.coloring_odds %}1 in {{ st.cfg.coloring_odds }} guests, {% if coloring_pool %}{{ coloring_pool }} page{{ "s" if coloring_pool != 1 }} in pool{% else %}pool empty (inactive){% endif %}{% else %}off{% endif %}</p>
 <p><a href="/admin/reprints">Reprint a badge</a> <span class="hint">(search every badge since the last reset; failed prints listed first)</span></p></section>
-<section class="card"><h2>Updates</h2>
+<section class="card"><h2>System</h2>
+<h3>Photos</h3>
+<p>Album: <a href="{{ album_url }}" target="_blank" rel="noopener">{{ album_url }}</a> ({{ album_count }} photos).
+Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}</span></p>
+<h3>Transform provider</h3>
+<p>Now: <b id="prov">{{ st.provider_name }}</b> <span class="hint">(resets to the .env value on restart)</span></p>
+<p class="act">{% for p in providers %}<button data-post="/admin/provider" data-body='{{ {"name": p}|tojson|forceescape }}'{% if p == st.provider_name %} class="on" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>{{ p }}</button>{% endfor %}</p>
+<h3>Updates</h3>
 {% if updates %}{% for f in updates.flags %}<div class="banner warn">{{ f }}</div>{% endfor %}
 <div class="tw"><pre>{{ updates.status }}</pre></div>
 <p class="act"><button data-post="/admin/update/pause">Pause</button><button data-post="/admin/update/resume">Resume</button>
@@ -154,13 +177,13 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 {% set TOP = 12 %}
 {% if not m.total %}<p class="empty">No guests yet.</p>{% else %}
 <p>{{ m.total }} guests, {{ m.photo_guests }} with a photo. <a href="/admin/matching.csv">Download CSV</a></p>
-<div class="grid">
-<section class="card"><h2>Decided by</h2><div class="tw"><table class="num">{% for k, n, p in m.decided %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table></div></section>
-<section class="card"><h2>Photo state</h2>
-<div class="tw"><table class="num">{% for k, n, p in m.photo_state %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table></div>
-<p class="hint">ready = photo words used; not_ready = not back in time; failed = the vision call errored; none = no photo.</p></section>
-<section class="card"><h2>Score histogram</h2><div class="tw"><table class="num"><tr><th>score</th><th>guests</th></tr>{% for sc, n in m.histogram %}<tr><td>{{ sc }}</td><td>{{ n }}</td></tr>{% endfor %}</table></div></section>
-</div>
+{% set hmax = m.histogram|map(attribute="1")|max %}
+<section class="card"><h2>How names were picked</h2><dl class="sum">
+<dt>Decided by</dt><dd><div class="tw"><table class="num">{% for k, n, p in m.decided %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td><td class="b"><span class="bar" style="--p:{{ p }}"></span></td></tr>{% endfor %}</table></div></dd>
+<dt>Photo state</dt><dd><div class="tw"><table class="num">{% for k, n, p in m.photo_state %}<tr><td>{{ k }}</td><td>{{ n }}</td><td>{{ p }}%</td><td class="b"><span class="bar" style="--p:{{ p }}"></span></td></tr>{% endfor %}</table></div>
+<p class="hint">ready = photo words used; not_ready = not back in time; failed = the vision call errored; none = no photo.</p></dd>
+<dt>Score histogram</dt><dd><div class="tw"><table class="num"><tr><th>score</th><th>guests</th><th></th></tr>{% for sc, n in m.histogram %}<tr><td>{{ sc }}</td><td>{{ n }}</td><td class="b"><span class="bar" style="--p:{{ (100 * n / hmax)|round|int }}"></span></td></tr>{% endfor %}</table></div></dd>
+</dl></section>
 <section class="card"><h2>Look words detected</h2>
 {% if m.looks %}<div class="tw"><table class="num"><tr><th>word</th><th>times</th><th>% of photo guests</th></tr>
 {% for w, n, p in m.looks[:TOP] %}<tr><td>{{ w }}</td><td>{{ n }}</td><td>{{ p }}%</td></tr>{% endfor %}</table></div>
@@ -184,32 +207,38 @@ Cloud errors: <span class="{{ 'low' if st.cloud.errors }}">{{ st.cloud.errors }}
 <ul class="cols">{% for w, d, sup, low in sd_unseen %}<li>{{ w }} <span>{{ sup }}</span></li>{% endfor %}</ul></details>
 {% else %}<p>All look words detected at least once.</p>{% endif %}</section>
 {% if m.total %}<section class="card"><h2>Most recent 20</h2>
-<div class="tw"><table class="wide"><tr><th>time</th><th>photo</th><th>looks</th><th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
-{% for r in m.recent %}<tr><td class="n">{{ r.ts|when }}</td><td>{{ r.photo_state }}</td><td>{{ r.looks }}</td><td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
-<td>{{ r.display }}</td><td class="n">{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table></div></section>{% endif %}
+{% set any_looks = m.recent|selectattr("looks")|list %}
+<div class="tw"><table class="wide"><tr><th>time</th><th>photo</th>{% if any_looks %}<th>looks</th>{% endif %}<th>answer words</th><th>tags</th><th>name</th><th>score (photo+answers+tags)</th><th>decided by</th></tr>
+{% for r in m.recent %}<tr><td class="n">{{ r.ts|when(today_time_only=True) }}</td><td>{{ r.photo_state }}</td>{% if any_looks %}<td>{{ r.looks }}</td>{% endif %}<td>{{ r.answer_words }}</td><td>{{ r.tags }}</td>
+<td class="r-nm">{{ r.display }}</td><td class="n">{{ r.score }} ({{ r.photo_pts }}+{{ r.answer_pts }}+{{ r.tag_pts }})</td><td>{{ r.decided_by }}</td></tr>{% endfor %}</table></div>
+{% if not any_looks %}<p class="hint">Looks column hidden: none of these guests had photo words in time.</p>{% endif %}</section>{% endif %}
 
 {% elif page == "reprints" %}
 <h1>Reprint a badge</h1>
 <form class="filters" method="get"><input name="q" value="{{ q }}" placeholder="name contains…" aria-label="Badge name" autofocus> <button>Search</button>
 {% if q %}<a href="/admin/reprints">clear</a>{% endif %} <span><b>{{ badges|length }}</b> shown</span></form>
-<div class="tw"><table class="badges"><tr><th>time</th><th>name</th><th>tagline</th><th>printed?</th><th>actions</th></tr>
+{# only failures are marked; the column (and its header) shows only when some badge did not print #}
+{% set any_unprinted = badges|rejectattr("printed")|list %}
+<div class="card"><div class="tw"><table class="badges"><tr><th>time</th><th>name</th><th>tagline</th>{% if any_unprinted %}<th>printed?</th>{% endif %}<th>actions</th></tr>
 {% for b in badges %}<tr><td class="n">{{ b.ts|when }}</td><td><b>{{ b.display }}</b></td><td>{{ b.tagline }}</td>
-<td>{% if b.printed %}<span class="muted">printed</span>{% else %}<span class="tag low">not printed</span>{% endif %}</td>
-<td><div class="act"><button data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button>
+{% if any_unprinted %}<td>{% if not b.printed %}<span class="tag low">not printed</span>{% endif %}</td>{% endif %}
+<td><div class="act"><button class="save" data-post="/admin/reprint" data-body='{{ {"id": b.id}|tojson|forceescape }}'>Reprint</button>
 {% if b.photo_url %}<a href="{{ b.photo_url }}" target="_blank" rel="noopener noreferrer">View photo</a>
 <button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": b.photo_url.rsplit("/", 1)[-1]}|tojson|forceescape }}'
 data-confirm="Delete the photo of {{ b.display }} everywhere (album too)? This cannot be undone.">Delete photo</button>{% endif %}</div></td></tr>
-{% else %}<tr><td class="empty" colspan="5">{{ "No badge name matches." if q else "No badges yet." }}</td></tr>{% endfor %}</table></div>
+{% else %}<tr><td class="empty" colspan="5">{{ "No badge name matches." if q else "No badges yet." }}</td></tr>{% endfor %}</table></div></div>
 
 {% elif page == "photos" %}
 <h1>Album photos</h1>
 <p>{{ entries|length }} in the album. Remove takes a photo out everywhere, like the guest's own Delete. Private photos: <a href="/admin/reprints">Reprint</a> › Delete photo.</p>
+{% if entries %}<div class="card list">{% endif %}
 {% for token, name in entries %}<div class="row"><img loading="lazy" alt="" src="{{ album_base }}/{{ token }}/dusty.jpg"
 data-o="{{ album_base }}/{{ token }}/original.jpg" onerror="this.onerror=null;this.src=this.dataset.o">
 <div class="body"><b>{{ name }}</b></div>
 <div class="acts"><button class="no" data-post="/admin/photo-delete" data-body='{{ {"token": token}|tojson|forceescape }}'
 data-confirm="Remove the photo of {{ name }} from the album and delete it everywhere? This cannot be undone.">Remove</button></div></div>
 {% else %}<p class="empty">No album photos yet.</p>{% endfor %}
+{% if entries %}</div>{% endif %}
 
 {% else %}
 <h1>Review {{ kind }}</h1>
@@ -223,23 +252,26 @@ data-confirm="Remove the photo of {{ name }} from the album and delete it everyw
 {% if kind != "taglines" %}<p class="legend"><span class="tag">tag</span> tags &nbsp;
 <span class="tag w">word</span> look/vibe words</p>{% endif %}
 
+{% if rows %}<div class="card list" data-filter="{{ status }}">{% endif %}
 {% for r in rows %}
+{% set pill %}<small class="st">{{ r.status }}</small>{% endset %}
 <div class="row {{ 'needs' if r.needs_owner }} {{ 'fav' if r.note == 'favorite' }}" data-id="{{ r.id }}" data-status="{{ r.status }}" data-edit='{{ edit_data(kind, r)|tojson|forceescape }}'>
-{% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}">{% endif %}
+{% if kind == "names" %}<img loading="lazy" alt="badge preview" src="/admin/preview/{{ r.id }}.png?v={{ preview_key(r.name) }}" width="{{ preview_size[0] }}" height="{{ preview_size[1] }}">{% endif %}
 <div class="body">
-{% if kind == "names" %}<b class="t">{{ r.name }}</b> <span class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>
+{% if kind == "names" %}<b class="t">{{ r.name }}</b>{{ pill }} <span class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</span>
 <span class="words">{% for w in r.words|sort %}<span class="tag w">{{ w }}</span>{% endfor %}</span>
-{% elif kind == "taglines" %}<b class="t">{{ r.text }}</b>
-{% else %}<b class="t">{{ r.prompt }}</b> (<span class="ty">{{ r.type }}</span>){% if r.fixed %} <span class="tag">fixed</span>{% endif %}
+{% elif kind == "taglines" %}<b class="t">{{ r.text }}</b>{{ pill }}
+{% else %}<b class="t">{{ r.prompt }}</b> <span>(<span class="ty">{{ r.type }}</span>)</span>{% if r.fixed %} <span class="tag">fixed</span>{% endif %}{{ pill }}
 <ul class="opts">{% for o in r.options %}<li class="{{ 'correct' if o.correct }}">{{ o.text }}{% if o.correct %} (correct){% endif %}
 {% for t in o.tags %}<span class="tag">{{ t }}</span>{% endfor %}{% for w in o.words|sort %}<span class="tag w">{{ w }}</span>{% endfor %}</li>{% endfor %}</ul>
 <div class="quip" {{ "hidden" if not r.quip }}>Quip: <i>{{ r.quip }}</i></div>{% endif %}
 {% if r.needs_owner %}<div class="note">Needs your review{% if r.note %}: {{ r.note }}{% endif %}</div>
-{% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}
-<small class="st">{{ r.status }}</small></div>
-<div class="acts"><button type="button" class="edit">Edit</button><button class="yes" data-s="approved">Approve</button><button class="no" data-s="rejected">Reject</button></div>
+{% elif r.note %}<div class="note">{{ r.note }}</div>{% endif %}</div>
+<div class="acts"><button type="button" class="edit">Edit</button><button class="yes" data-s="approved" aria-pressed="{{ (r.status == 'approved')|tojson }}">Approve</button><button class="no" data-s="rejected" aria-pressed="{{ (r.status == 'rejected')|tojson }}">Reject</button></div>
 </div>
-{% else %}<p class="empty">Nothing matches these filters.</p>{% endfor %}
+{% else %}{% if status and not tag and not needs_owner %}<p class="empty">No {{ status }} {{ kind }}. <a href="/admin/review?kind={{ kind }}&amp;status=">Show all statuses</a></p>
+{% else %}<p class="empty">Nothing matches these filters.</p>{% endif %}{% endfor %}
+{% if rows %}</div>{% endif %}
 
 <details {{ 'open' if kind and msg }}><summary><b>Add a {{ kind[:-1] }}</b> (approved immediately)</summary>
 <form method="post" action="/admin/add"><input type="hidden" name="kind" value="{{ kind }}">
@@ -253,7 +285,7 @@ data-confirm="Remove the photo of {{ name }} from the album and delete it everyw
 <label><input type="checkbox" name="correct_{{ s }}"> correct</label>
 <input name="tags_{{ s }}" placeholder="tags" size="20"> <input name="words_{{ s }}" placeholder="words" size="20"></p>{% endfor %}
 <p><input name="quip" placeholder="Quip (optional)" maxlength="{{ limits.max_quip }}" size="40"></p>{% endif %}
-<button class="yes">Add</button></form></details>
+<button class="save">Add</button></form></details>
 {% endif %}
 </main>
 <script>
@@ -273,6 +305,7 @@ document.querySelectorAll("[data-post]").forEach(b => b.onclick = () => {
 const kind = {{ (kind or "")|tojson }}, want = {{ (status or "")|tojson }}, flaggedOn = {{ needs_owner|default(false)|tojson }};
 function shown(row, s) {
   row.dataset.status = s; row.querySelector(".st").textContent = s;
+  row.querySelectorAll(".acts button[data-s]").forEach(b => b.setAttribute("aria-pressed", b.dataset.s === s));
   if (want && want !== s) { row.classList.add("gone"); count(); }
 }
 const setStatus = (row, s) => post("/admin/status", {kind, id: row.dataset.id, status: s}).then(() => shown(row, s));
@@ -341,16 +374,18 @@ function openEdit(row) {
     f.append(line(lab("Quip", field("quip", d.quip, LIM.max_quip, "optional"))));
   }
   const save = el("button", {className: "save"}, "Save");
-  f.append(save, " ", el("button", {type: "button", onclick: () => f.remove()}, "Cancel"));
-  f.onkeydown = e => { if (e.key === "Escape") f.remove(); };
+  const close = () => { f.remove(); row.classList.remove("editing"); row.querySelector(".edit")?.focus(); };
+  f.append(save, " ", el("button", {type: "button", onclick: close}, "Cancel"));
+  f.onkeydown = e => { if (e.key === "Escape") close(); };
   f.onsubmit = e => {
     e.preventDefault();
     save.disabled = true;
     post("/admin/edit", {kind, id: row.dataset.id, fields: fields(f, d)})
-      .then(j => { paint(row, j.row); f.remove(); flash("Saved.", true); })
+      .then(j => { paint(row, j.row); close(); flash("Saved.", true); })
       .catch(e => { save.disabled = false; flash("Failed: " + e.message); });
   };
   row.querySelector(".body").append(f);
+  row.classList.add("editing");
   f.elements[0].focus();
 }
 document.querySelectorAll(".row .edit").forEach(b => b.onclick = () => openEdit(b.closest(".row")));

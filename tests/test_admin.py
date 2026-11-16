@@ -123,6 +123,11 @@ def test_review_page(k):
     assert "Needy Tot" in only and "Fave Tot" not in only
     qs = k.c.get("/admin/review?kind=questions&status=approved", headers=AUTH).data.decode()
     assert "(correct)" in qs and "Quip:" in qs
+    assert 'data-s="approved" aria-pressed="true"' in qs and 'data-s="rejected" aria-pressed="false"' in qs
+    empty = k.c.get("/admin/review?kind=taglines&status=rejected", headers=AUTH).data.decode()
+    assert 'No rejected taglines. <a href="/admin/review?kind=taglines&amp;status=">Show all statuses</a>' in empty
+    tagged = k.c.get("/admin/review?kind=names&status=rejected&tag=nope", headers=AUTH).data.decode()
+    assert "Nothing matches these filters." in tagged
 
 
 def test_preview_png(k):
@@ -544,6 +549,9 @@ def test_when_shows_local_date_and_time(k, monkeypatch):
         assert admin.when("2026-11-15T02:05:09.123+00:00") == "Sat Nov 14, 9:05 PM"
         assert admin.when("2026-11-14T16:30:00+00:00") == "Sat Nov 14, 11:30 AM"
         assert admin.when("") == "" and admin.when(None) is None and admin.when("junk") == "junk"
+        assert admin.when("2026-11-14T16:30:00+00:00", today_time_only=True) == "Sat Nov 14, 11:30 AM"  # not today
+        now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        assert admin.when(now, today_time_only=True) == admin.when(now).split(", ", 1)[1]
         k.finish(k.session(photo=False))
         assert admin.when(k.state.names.badges()[0]["ts"]) in k.c.get("/admin/reprints", headers=AUTH).data.decode()
     finally:

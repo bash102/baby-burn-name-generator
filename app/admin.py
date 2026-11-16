@@ -33,6 +33,7 @@ from app.transform import get_provider
 log = logging.getLogger(__name__)
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 SAMPLE_TAGLINE = "Dusty since the womb"
+CRITICAL_NAMES = 10  # dashboard: a tag with fewer unused names than this is red (cfg.low_names_warning: rust)
 SAMPLE_BANNER = "Using public sample content. Set CONTENT_DIR to the private content repo to edit."
 OPTION_SLOTS = "abcd"
 # Changes when the badge code or fonts change, so a deploy that alters the badge re-renders the previews.
@@ -54,13 +55,15 @@ def _limits():
 
 
 @bp.app_template_filter("when")
-def when(ts) -> str:
-    """A stored UTC ISO time in the Pi's local zone, e.g. "Sat Nov 14, 9:05 PM"; anything unparsable as is."""
+def when(ts, today_time_only: bool = False) -> str:
+    """A stored UTC ISO time in the Pi's local zone, e.g. "Sat Nov 14, 9:05 PM"; anything unparsable as is.
+    today_time_only: just "9:05 PM" when that local date is today."""
     try:
         d = datetime.fromisoformat(ts).astimezone()
     except (TypeError, ValueError):
         return ts
-    return f"{d:%a %b} {d.day}, {d.hour % 12 or 12}:{d:%M %p}"
+    t = f"{d.hour % 12 or 12}:{d:%M %p}"
+    return t if today_time_only and d.date() == datetime.now().astimezone().date() else f"{d:%a %b} {d.day}, {t}"
 
 
 @bp.before_request
@@ -192,7 +195,7 @@ def dashboard():
     by_kind = {k: {s: sum(i.status == s for i in getattr(st.content, k)) for s in sorted(STATUSES)} for k in KINDS}
     return render_template(
         "admin.html", page="dashboard", st=st, by_kind=by_kind, remaining=st.names.remaining(),
-        by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning,
+        by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning, crit=min(CRITICAL_NAMES, st.cfg.low_names_warning),
         providers=sorted(PROVIDERS),
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
         updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"),
@@ -276,7 +279,8 @@ def review():
         "admin.html", page="review", st=st, kind=kind, status=status, tag=tag, rows=rows,
         all_tags=sorted({t for n in st.content.names for t in n.tags}), statuses=sorted(STATUSES),
         needs_owner=bool(a.get("needs_owner")), msg=a.get("msg"),
-        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, preview_key=preview_key, edit_data=edit_data)
+        sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, preview_key=preview_key, edit_data=edit_data,
+        preview_size=(badge.W, badge.H))
 
 
 def edit_data(kind: str, r) -> dict:
