@@ -194,7 +194,7 @@ Common jobs:
 - Reprint a badge: admin › **Reprint** (`/admin/reprints`), search part of the name, press **Reprint**.
 - Switch AI provider: use the provider control in admin (no restart needed).
 
-**Viewing a guest's photo.** Each **Reprint** row with a photo has a **View photo** link that opens the guest's own photo page (the one their QR code opens) in a new tab. Private photos delete themselves 14 days after upload; save copies before then if you want to keep them.
+**Viewing a guest's photo.** Each **Reprint** row with a photo has a **View photo** link that opens the guest's own photo page (the one their QR code opens) in a new tab. Private photos delete themselves about 14 days after upload (the page then says so); save copies before then if you want to keep them.
 
 **Removing a photo.** Admin › **Photos** (`/admin/photos`) lists every album photo with a **Remove** button; for a private (unshared) photo use **Delete photo** on its row in **Reprint**. Both ask first, then do exactly what a guest's own Delete does: both images leave the bucket, the guest's QR page says "This photo has been deleted.", the album page drops it, and the local copies and `data/album/` backup are removed. It cannot be undone. The badge stays in the Reprint list and its QR still points at the (now "deleted") photo page; the Delete photo button stays too, and pressing it again is harmless.
 
