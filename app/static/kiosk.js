@@ -44,7 +44,9 @@ const COPY = {
 // Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
 const IDLE_MS = 40000, IDLE_LONG_MS = 90000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
-const FETCH_MS = 10000;   // per try; matches the server's SOCKET_TIMEOUT_S. Worst case 4 tries + back-off = 43.5 s < IDLE_LONG_MS
+const FETCH_MS = 10000;   // per try; matches the server's SOCKET_TIMEOUT_S
+const FINISH_TRY_MS = 20000;   // /finish prints the badge (and maybe a coloring page) before it answers: ~3-7 s, more if the
+                              // printer is slow to confirm. Worst case 4 tries + back-off = 83.5 s < IDLE_LONG_MS
 const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
 const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page;
                                                  // &slowsession / &failsession: the photo upload (POST /api/session) takes 8 s / fails
@@ -53,7 +55,7 @@ const STUB_MODE = new URLSearchParams(location.search).get("stub");
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Retries (0.5/1/2 s back-off) on network errors or 5xx; returns the last response, or throws the last error.
-// Every try is aborted after FETCH_MS (CHOICE_TRY_MS for /photo-choice): on a dead network a request must fail,
+// Every try is aborted after FETCH_MS (CHOICE_TRY_MS for /photo-choice, FINISH_TRY_MS for /finish): on a dead network a request must fail,
 // not hang. A hung request froze the kiosk, and each idle reset queued more; when the network came back iOS
 // sent the whole backlog at once (several sessions and quizzes in one second).
 // GETs and POST /finish retry 3x (the server dedupes per session). POST /photo-choice retries once, each try
@@ -66,7 +68,8 @@ async function api(path, opts = {}) {
   const choice = path.endsWith("/photo-choice"), retries = path === "/api/session" ? 0 : choice ? 1 : 3;
   for (let i = 0; ; i++) {
     let res;
-    const ac = new AbortController(), t = setTimeout(() => ac.abort(), choice ? CHOICE_TRY_MS : FETCH_MS);
+    const ac = new AbortController(),
+      t = setTimeout(() => ac.abort(), choice ? CHOICE_TRY_MS : path.endsWith("/finish") ? FINISH_TRY_MS : FETCH_MS);
     try {
       res = await once(path, { ...opts, signal: ac.signal });
       if (res.status < 500 || i >= retries) return res;
