@@ -88,6 +88,8 @@ input[type=checkbox]{min-height:0;width:18px;height:18px;accent-color:var(--gree
 #flash{margin:0 0 8px}
 @media (pointer:coarse){button,input:not([type=checkbox]),select,.act a{min-height:44px}}
 @media (max-width:600px){
+main{padding-bottom:96px}  /* room for the bottom-pinned #flash so it never covers the last row */
+.row.editing img{display:none}  /* the edit form gets the full width */
   header{padding:0 8px;position:static}/* two nav rows would eat the screen */
   #flash{position:fixed;left:8px;right:8px;bottom:8px;z-index:3}header nav{display:grid;grid-template-columns:repeat(4,1fr)}
   header nav a{text-align:center;padding:9px 2px 6px;font-size:14px}header nav a:first-child{margin-left:0}
@@ -372,7 +374,7 @@ function openEdit(row) {
     f.append(line(lab("Quip", field("quip", d.quip, LIM.max_quip, "optional"))));
   }
   const save = el("button", {className: "save"}, "Save");
-  const close = () => { f.remove(); row.classList.remove("editing"); };
+  const close = () => { f.remove(); row.classList.remove("editing"); row.querySelector(".edit")?.focus(); };
   f.append(save, " ", el("button", {type: "button", onclick: close}, "Cancel"));
   f.onkeydown = e => { if (e.key === "Escape") close(); };
   f.onsubmit = e => {

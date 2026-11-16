@@ -195,7 +195,7 @@ def dashboard():
     by_kind = {k: {s: sum(i.status == s for i in getattr(st.content, k)) for s in sorted(STATUSES)} for k in KINDS}
     return render_template(
         "admin.html", page="dashboard", st=st, by_kind=by_kind, remaining=st.names.remaining(),
-        by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning, crit=CRITICAL_NAMES,
+        by_tag=sorted(st.names.remaining_by_tag().items()), low=st.cfg.low_names_warning, crit=min(CRITICAL_NAMES, st.cfg.low_names_warning),
         providers=sorted(PROVIDERS),
         album_url=st.cloud.album_url(), album_count=len(st.cloud.album.entries()),
         updates=_updates(), coloring_pool=len(page_files(st.cfg.coloring_path)), sample_banner=st.cfg.content_is_sample and SAMPLE_BANNER, msg=request.args.get("msg"),
