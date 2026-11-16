@@ -44,6 +44,11 @@ const COPY = {
 // Idle reset is per screen: IDLE_MS everywhere, IDLE_LONG_MS on Reveal, Take it home and the Delete/Album wait.
 // With a photo, Reveal advances REVEAL_ADVANCE_MS after the photo (or, after PHOTO_TIMEOUT_MS, the original) shows.
 const IDLE_MS = 40000, IDLE_LONG_MS = 90000, REVEAL_ADVANCE_MS = 8000, POLL_FETCH_MS = 5000, CHOICE_TRY_MS = 11000;
+const FETCH_MS = 10000;   // per try: a ~300 KB photo needs only ~0.25 Mbit/s to make it
+const FINISH_TRY_MS = 20000;   // /finish prints the badge (and maybe a coloring page) before it answers: ~3-7 s, more if the
+                              // printer is slow to confirm. The /finish call alone is at most 4 tries + back-off = 83.5 s; with
+                              // a hung photo upload first the finish wait can pass IDLE_LONG_MS, and the idle reset drops
+                              // the guest safely (epoch check).
 const FLASH_MS = 1000, PHOTO_TIMEOUT_MS = 25000, POLL_MS = 1000, COUNT_FROM = 3, MAX_PX = 1024;
 const STUB = location.search.includes("stub");   // ?stub = canned API; ?stub=fail photo fails; ?stub=slow photo never ready; &jam printer jam; &coloring bonus page;
                                                  // &slowsession / &failsession: the photo upload (POST /api/session) takes 8 s / fails
@@ -52,6 +57,9 @@ const STUB_MODE = new URLSearchParams(location.search).get("stub");
 // ---- API ----
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Retries (0.5/1/2 s back-off) on network errors or 5xx; returns the last response, or throws the last error.
+// Every try is aborted after FETCH_MS (CHOICE_TRY_MS for /photo-choice, FINISH_TRY_MS for /finish): on a dead network a request must fail,
+// not hang. A hung request froze the kiosk, and each idle reset queued more; when the network came back iOS
+// sent the whole backlog at once (several sessions and quizzes in one second).
 // GETs and POST /finish retry 3x (the server dedupes per session). POST /photo-choice retries once, each try
 // capped at CHOICE_TRY_MS (the server waits <= 10 s for the cloud), so a Delete/Album tap reaches its result
 // or failure screen within 11 + 0.5 + 11 = 22.5 s.
@@ -62,9 +70,10 @@ async function api(path, opts = {}) {
   const choice = path.endsWith("/photo-choice"), retries = path === "/api/session" ? 0 : choice ? 1 : 3;
   for (let i = 0; ; i++) {
     let res;
-    const ac = new AbortController(), t = choice && setTimeout(() => ac.abort(), CHOICE_TRY_MS);
+    const ac = new AbortController(),
+      t = setTimeout(() => ac.abort(), choice ? CHOICE_TRY_MS : path.endsWith("/finish") ? FINISH_TRY_MS : FETCH_MS);
     try {
-      res = await once(path, choice ? { ...opts, signal: ac.signal } : opts);
+      res = await once(path, { ...opts, signal: ac.signal });
       if (res.status < 500 || i >= retries) return res;
     } catch (e) { if (i >= retries) throw e; } finally { clearTimeout(t); }
     await sleep(500 * 2 ** i);
