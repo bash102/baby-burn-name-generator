@@ -2,7 +2,7 @@
 
 # Baby Burn Name Generator
 
-### **Walk up a stranger. Walk away with a playa name, a badge, and a dusty-baby portrait.**
+### **Arrive a stranger. Leave with a playa name, a badge and a dusty-baby portrait.**
 
 ![Python](https://img.shields.io/badge/python-3.11-3776AB)
 ![Runs on](https://img.shields.io/badge/runs%20on-Raspberry%20Pi-C51A4A)
